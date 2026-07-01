@@ -8,8 +8,12 @@ empreinte de contenu (``perception.dedup``) : rejouer le meme fichier ne
 cree jamais de doublon.
 
 Ne calcule rien, ne decide rien (Conception, frontiere M04) : le contenu
-du fichier n'est pas interprete ici - seuls les parseurs specialises
-(Sprint 3 : email/CSV/XLSX/PDF/OCR) l'extrairont en champs structures.
+du fichier n'est pas interprete ici au-dela du routage - seuls les
+parseurs specialises (Sprint 3 : email/CSV/XLSX/PDF/OCR) l'extrairont en
+champs structures. La route ``"email"`` delegue deja a
+``perception.email_parser`` (T-M05-1) ; les autres routes restent
+generiques (``PERCEPTION.DocumentReceived``) en attendant leurs parseurs
+dedies.
 """
 import json
 import os
@@ -61,7 +65,7 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _archive_file(inbox_dir, archive_dir, filename, hash_):
+def archive_file(inbox_dir, archive_dir, filename, hash_):
     """Deplace le fichier traite vers l'archive. Prefixe par les 8
     premiers caracteres de son empreinte pour ne jamais ecraser un fichier
     homonyme deja archive."""
@@ -165,7 +169,7 @@ def process_file(conn, inbox_dir, archive_dir, filename):
     import_id = f"ING:{uuid4().hex}"
 
     if dedup.file_seen(conn, hash_):
-        _archive_file(inbox_dir, archive_dir, filename, hash_)
+        archive_file(inbox_dir, archive_dir, filename, hash_)
         dedup.record_ingestion(
             conn, import_id, source="inbox", file=filename, hash_=hash_,
             records=1, new_records=0, duplicates=1, anomalies=0, errors=0,
@@ -179,7 +183,7 @@ def process_file(conn, inbox_dir, archive_dir, filename):
         event_id, anomaly_id = _write_quarantine_event(
             conn, filename, hash_, reason="extension non reconnue", now=now
         )
-        _archive_file(inbox_dir, archive_dir, filename, hash_)
+        archive_file(inbox_dir, archive_dir, filename, hash_)
         dedup.record_ingestion(
             conn, import_id, source="inbox", file=filename, hash_=hash_,
             records=1, new_records=0, duplicates=0, anomalies=1, errors=0,
@@ -193,8 +197,17 @@ def process_file(conn, inbox_dir, archive_dir, filename):
             "anomaly_id": anomaly_id,
         }
 
+    if route == "email":
+        # Import differe : perception.email_parser (T-M05-1) reutilise
+        # process_file/archive_file pour traiter les pieces jointes et
+        # archiver l'email lui-meme - un import en tete de module creerait
+        # une dependance circulaire entre les deux fichiers.
+        from perception import email_parser
+
+        return email_parser.parse(conn, inbox_dir, archive_dir, filename)
+
     _, event_id = _write_document_received_event(conn, filename, route, hash_, size_bytes, now)
-    _archive_file(inbox_dir, archive_dir, filename, hash_)
+    archive_file(inbox_dir, archive_dir, filename, hash_)
     dedup.record_ingestion(
         conn, import_id, source="inbox", file=filename, hash_=hash_,
         records=1, new_records=1, duplicates=0, anomalies=0, errors=0,
