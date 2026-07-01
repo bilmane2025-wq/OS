@@ -74,6 +74,22 @@ def _require_list(value, field_name):
     return value
 
 
+def _require_list_of_non_empty_str(value, field_name):
+    _require_list(value, field_name)
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or item.strip() == "":
+            _fail(f"{field_name}[{index}] doit etre une chaine non vide (recu: {item!r})")
+    return value
+
+
+def _require_list_of_dicts(value, field_name):
+    _require_list(value, field_name)
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            _fail(f"{field_name}[{index}] doit etre un objet (dict) (recu: {type(item).__name__})")
+    return value
+
+
 def _require_int_in_range(value, field_name, minimum, maximum):
     if isinstance(value, bool) or not isinstance(value, int):
         _fail(f"{field_name} doit etre un entier (recu: {value!r})")
@@ -94,9 +110,18 @@ def _parse_timestamp(value, field_name):
     if not isinstance(value, str) or value.strip() == "":
         _fail(f"{field_name} doit etre une chaine ISO-8601 non vide (recu: {value!r})")
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         _fail(f"{field_name} n'est pas une date/heure ISO-8601 valide (recu: {value!r})")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        # La bi-temporalite exige un instant non ambigu : un fuseau horaire
+        # explicite (Z ou +HH:MM) est obligatoire, une heure locale nue est
+        # refusee (revue externe PR #2, commentaire 1).
+        _fail(
+            f"{field_name} doit indiquer un fuseau horaire explicite (Z ou "
+            f"+HH:MM), pas une date/heure naive (recu: {value!r})"
+        )
+    return parsed
 
 
 def _validate_provenance(provenance):
@@ -142,7 +167,7 @@ def _validate_confidence(confidence):
         _fail(f"confidence.nature hors specification : {nature!r} (attendu l'une de {NATURES})")
 
     _require_score(confidence["score"], "confidence.score")
-    _require_list(confidence["evidence"], "confidence.evidence")
+    _require_list_of_non_empty_str(confidence["evidence"], "confidence.evidence")
 
 
 def _validate_permissions(permissions):
@@ -157,7 +182,7 @@ def _validate_lifecycle(lifecycle):
     _require_dict(lifecycle, "lifecycle")
     _require_keys(lifecycle, _REQUIRED_LIFECYCLE_KEYS, "lifecycle")
     _require_non_empty_str(lifecycle["state"], "lifecycle.state")
-    _require_list(lifecycle["history"], "lifecycle.history")
+    _require_list_of_dicts(lifecycle["history"], "lifecycle.history")
 
 
 def validate_envelope(envelope):

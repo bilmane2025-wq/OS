@@ -28,8 +28,8 @@ def _valid_kwargs(**overrides):
         label="Facture Foodex #123",
         source="inbox/facture_foodex_123.pdf",
         author="agent:perception",
-        valid_from="2028-04-01T00:00:00",
-        ts_record="2028-04-02T09:30:00",
+        valid_from="2028-04-01T00:00:00Z",
+        ts_record="2028-04-02T09:30:00Z",
         nature="fait",
         score=1.0,
         owner="kameha",
@@ -56,7 +56,7 @@ class MakeEnvelopeTests(unittest.TestCase):
                 "event_id": None,
             },
         )
-        self.assertEqual(envelope["temporal"]["valid_from"], "2028-04-01T00:00:00")
+        self.assertEqual(envelope["temporal"]["valid_from"], "2028-04-01T00:00:00Z")
         self.assertIsNone(envelope["temporal"]["valid_to"])
         self.assertEqual(envelope["temporal"]["version"], 1)
         self.assertEqual(
@@ -70,7 +70,7 @@ class MakeEnvelopeTests(unittest.TestCase):
             **_valid_kwargs(
                 origin_ref="email:msg-42",
                 event_id="EVT:KAMEHA:000007",
-                valid_to="2028-05-01T00:00:00",
+                valid_to="2028-05-01T00:00:00Z",
                 version=3,
                 evidence=["EVT:KAMEHA:000007"],
                 state="archive",
@@ -79,7 +79,7 @@ class MakeEnvelopeTests(unittest.TestCase):
         )
         self.assertEqual(envelope["provenance"]["origin_ref"], "email:msg-42")
         self.assertEqual(envelope["provenance"]["event_id"], "EVT:KAMEHA:000007")
-        self.assertEqual(envelope["temporal"]["valid_to"], "2028-05-01T00:00:00")
+        self.assertEqual(envelope["temporal"]["valid_to"], "2028-05-01T00:00:00Z")
         self.assertEqual(envelope["temporal"]["version"], 3)
         self.assertEqual(envelope["confidence"]["evidence"], ["EVT:KAMEHA:000007"])
         self.assertEqual(envelope["lifecycle"]["state"], "archive")
@@ -218,17 +218,41 @@ class ValidateEnvelopeStructureTests(unittest.TestCase):
 
     def test_valid_to_must_be_strictly_after_valid_from(self):
         def mutate(e):
-            e["temporal"]["valid_from"] = "2028-04-10T00:00:00"
-            e["temporal"]["valid_to"] = "2028-04-01T00:00:00"
+            e["temporal"]["valid_from"] = "2028-04-10T00:00:00Z"
+            e["temporal"]["valid_to"] = "2028-04-01T00:00:00Z"
 
         self._corrupt_and_expect_rejection(mutate)
 
     def test_valid_to_equal_to_valid_from_is_rejected(self):
         def mutate(e):
-            e["temporal"]["valid_from"] = "2028-04-10T00:00:00"
-            e["temporal"]["valid_to"] = "2028-04-10T00:00:00"
+            e["temporal"]["valid_from"] = "2028-04-10T00:00:00Z"
+            e["temporal"]["valid_to"] = "2028-04-10T00:00:00Z"
 
         self._corrupt_and_expect_rejection(mutate)
+
+    def test_valid_from_without_timezone_is_rejected(self):
+        self._corrupt_and_expect_rejection(
+            lambda e: e["temporal"].__setitem__("valid_from", "2028-04-01T10:00:00")
+        )
+
+    def test_ts_record_without_timezone_is_rejected(self):
+        self._corrupt_and_expect_rejection(
+            lambda e: e["temporal"].__setitem__("ts_record", "2028-04-01T10:00:00")
+        )
+
+    def test_valid_to_without_timezone_is_rejected(self):
+        def mutate(e):
+            e["temporal"]["valid_to"] = "2028-04-02T10:00:00"
+
+        self._corrupt_and_expect_rejection(mutate)
+
+    def test_timestamps_with_explicit_timezone_are_accepted(self):
+        for value in ("2028-04-01T10:00:00Z", "2028-04-01T10:00:00+02:00", "2028-04-01T10:00:00-05:00"):
+            with self.subTest(value=value):
+                envelope = copy.deepcopy(self.envelope)
+                envelope["temporal"]["valid_from"] = value
+                envelope["temporal"]["ts_record"] = value
+                self.assertTrue(validate_envelope(envelope))
 
     def test_version_must_be_a_positive_integer(self):
         for bogus in (0, -1, "1", 1.5, True):
@@ -265,6 +289,18 @@ class ValidateEnvelopeStructureTests(unittest.TestCase):
         self._corrupt_and_expect_rejection(
             lambda e: e["confidence"].__setitem__("evidence", "EVT:1")
         )
+
+    def test_evidence_items_must_be_non_empty_strings(self):
+        for bogus_list in ([""], [123], [None], ["   "]):
+            with self.subTest(value=bogus_list):
+                self._corrupt_and_expect_rejection(
+                    lambda e, bogus_list=bogus_list: e["confidence"].__setitem__("evidence", bogus_list)
+                )
+
+    def test_evidence_with_valid_string_items_is_accepted(self):
+        envelope = copy.deepcopy(self.envelope)
+        envelope["confidence"]["evidence"] = ["EVT:KAMEHA:000001", "EVT:KAMEHA:000002"]
+        self.assertTrue(validate_envelope(envelope))
 
     # --- permissions -----------------------------------------------------
 
@@ -319,6 +355,20 @@ class ValidateEnvelopeStructureTests(unittest.TestCase):
         self._corrupt_and_expect_rejection(
             lambda e: e["lifecycle"].__setitem__("history", "not-a-list")
         )
+
+    def test_history_items_must_be_dicts(self):
+        for bogus_list in (["abc"], [123], [None]):
+            with self.subTest(value=bogus_list):
+                self._corrupt_and_expect_rejection(
+                    lambda e, bogus_list=bogus_list: e["lifecycle"].__setitem__("history", bogus_list)
+                )
+
+    def test_history_with_valid_dict_items_is_accepted(self):
+        envelope = copy.deepcopy(self.envelope)
+        envelope["lifecycle"]["history"] = [
+            {"from": "actif", "to": "archive", "ts": "2028-05-02T00:00:00Z"}
+        ]
+        self.assertTrue(validate_envelope(envelope))
 
 
 if __name__ == "__main__":
