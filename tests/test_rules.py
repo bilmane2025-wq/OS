@@ -240,5 +240,61 @@ class ValidToAndActiveTests(RulesTestCase):
         self.assertEqual(result["body"], {"formule": "v1"})
 
 
+class NoOverlapInvariantTests(RulesTestCase):
+    """Invariant metier : deux versions d'une meme regle ne sont jamais
+    actives sur une meme periode de validite - pour toute date, get() ne
+    peut renvoyer qu'une seule version a la fois, jamais deux."""
+
+    def setUp(self):
+        super().setUp()
+        rules.add_version(
+            self.conn, "alert-threshold/marge", {"seuil": 0.10},
+            valid_from="2028-01-01T00:00:00Z",
+        )
+        rules.add_version(
+            self.conn, "alert-threshold/marge", {"seuil": 0.12},
+            valid_from="2028-06-01T00:00:00Z",
+        )
+        rules.add_version(
+            self.conn, "alert-threshold/marge", {"seuil": 0.15},
+            valid_from="2028-09-01T00:00:00Z",
+        )
+
+    def test_each_date_resolves_to_exactly_one_version_never_two(self):
+        expectations = [
+            ("2028-01-01T00:00:00Z", 1),
+            ("2028-03-15T00:00:00Z", 1),
+            ("2028-05-31T23:59:59Z", 1),
+            ("2028-06-01T00:00:00Z", 2),
+            ("2028-07-15T00:00:00Z", 2),
+            ("2028-08-31T23:59:59Z", 2),
+            ("2028-09-01T00:00:00Z", 3),
+            ("2028-12-31T23:59:59Z", 3),
+        ]
+
+        for at_date, expected_version in expectations:
+            with self.subTest(at_date=at_date):
+                result = rules.get(self.conn, "alert-threshold/marge", at_date)
+                # get() ne peut structurellement renvoyer qu'un seul objet
+                # (jamais une liste) : la seule facon de verifier
+                # l'absence d'ambiguite est de prouver que c'est toujours
+                # la version attendue, jamais une des deux autres.
+                self.assertIsNotNone(result)
+                self.assertEqual(result["version"], expected_version)
+                other_versions = {1, 2, 3} - {expected_version}
+                self.assertNotIn(result["version"], other_versions)
+
+    def test_version_boundary_is_never_shared_by_two_versions(self):
+        """A l'instant precis ou une version prend effet, l'ancienne
+        version n'est plus jamais renvoyee - aucun chevauchement possible
+        a la frontiere."""
+        just_before = rules.get(self.conn, "alert-threshold/marge", "2028-05-31T23:59:59Z")
+        at_boundary = rules.get(self.conn, "alert-threshold/marge", "2028-06-01T00:00:00Z")
+
+        self.assertEqual(just_before["version"], 1)
+        self.assertEqual(at_boundary["version"], 2)
+        self.assertNotEqual(just_before["version"], at_boundary["version"])
+
+
 if __name__ == "__main__":
     unittest.main()
