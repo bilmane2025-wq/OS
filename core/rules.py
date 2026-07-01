@@ -1,4 +1,5 @@
-"""Corpus de regles (patrimoine 2) - versionnees, bi-temporelles (T-M02-1).
+"""Corpus de regles (patrimoine 2) - versionnees, bi-temporelles
+(T-M02-1, T-M02-2).
 
 Le corpus de regles est le second patrimoine (Constitution, section II ;
 Conception, module M02) : chaque regle (categorisation, definition de KPI,
@@ -15,7 +16,12 @@ ecrasement). ``get`` renvoie la version applicable a une date du monde
 donnee (``valid_from``), pas necessairement la plus recente.
 """
 import json
+import os
 from datetime import datetime, timezone
+
+DEFAULT_SEED_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed_rules.json"
+)
 
 _RULE_COLUMNS = (
     "rule_id", "name", "version", "valid_from", "valid_to", "ts_record",
@@ -184,3 +190,42 @@ def get(conn, name, at_date):
     if row is None:
         return None
     return _row_to_dict(row)
+
+
+def load_seed_rules(conn, path=DEFAULT_SEED_PATH):
+    """Charge le jeu initial de regles (categorisation, KPI, seuils, taux
+    de change) comme version 1 de chacune (Backlog, T-M02-2).
+
+    Idempotent : une regle qui possede deja au moins une version (seed ou
+    non) n'est jamais reseedee - un redemarrage ne cree pas de version 2 a
+    chaque fois, et une regle deja corrigee manuellement n'est jamais
+    ecrasee.
+
+    Args:
+        conn: connexion SQLite ouverte.
+        path: chemin du fichier JSON de regles seed (par defaut
+            ``data/seed_rules.json``).
+
+    Returns:
+        list[dict]: les versions effectivement inserees lors de cet appel
+        (liste vide si tout etait deja seede).
+    """
+    with open(path, "r", encoding="utf-8") as seed_file:
+        entries = json.load(seed_file)
+
+    inserted = []
+    for entry in entries:
+        name = entry["name"]
+        if _next_version(conn, name) != 1:
+            continue  # deja une version existante : on ne touche jamais a l'existant
+        result = add_version(
+            conn,
+            name=name,
+            body=entry["body"],
+            valid_from=entry["valid_from"],
+            origin=entry.get("origin", "seed"),
+            confidence=entry.get("confidence"),
+            note=entry.get("note"),
+        )
+        inserted.append(result)
+    return inserted
