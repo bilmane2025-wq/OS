@@ -1,0 +1,9 @@
+# Enterprise OS - dependances externes.
+#
+# Le MVP tourne sur la bibliotheque standard Python autant que possible
+# (zero API, zero cloud, zero config). Seule exception, deliberee :
+# `cryptography`, utilisee par governance/secrets.py (T-M30-1) pour le
+# chiffrement au repos du coffre a secrets - la bibliotheque standard ne
+# fournit pas de chiffrement symetrique authentifie, et "rouler son propre
+# chiffrement" est explicitement a eviter pour un composant de securite.
+cryptography>=41
