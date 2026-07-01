@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# La DB est generee localement (init_db) - on ne versionne pas le binaire.
+data/eos.db
+
+# Contenu deposé/archivé localement, jamais versionné - seuls les dossiers
+# eux-memes (via .gitkeep) sont trackes.
+data/inbox/*
+!data/inbox/.gitkeep
+data/archive/*
+!data/archive/.gitkeep
+data/secrets/*
+!data/secrets/.gitkeep
