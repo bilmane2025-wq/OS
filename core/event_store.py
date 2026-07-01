@@ -1,4 +1,4 @@
-"""Journal d'evenements (patrimoine 1) - append-only (T-M01-1).
+"""Journal d'evenements (patrimoine 1) - append-only (T-M01-1, T-M01-2).
 
 Le journal est la seule source de verite primaire du systeme (Constitution,
 loi 1). Cette implementation garantit, au niveau de la base elle-meme (pas
@@ -14,6 +14,13 @@ seulement au niveau de l'API Python), les deux proprietes non-negociables :
 La table ``events`` elle-meme est creee par ``app.init_db`` (T-M00-1) ;
 ``ensure_schema`` n'ajoute ici que la garde d'immutabilite propre au
 journal.
+
+``read`` (T-M01-2) relit le flux dans un ordre deterministe, filtrable par
+``valid_from``/``valid_to`` (temps du monde) et par ``decision_time``
+(ce qui etait connu du systeme a une date donnee) - c'est la brique de
+base du rejeu (Chronos). La requete bi-temporelle complete (reconstruire
+l'etat du graphe a une date passee) est batie plus tard sur cette base
+(T-M10-1) ; ``read`` ne fait ici que lire le journal, sans interpretation.
 """
 import hashlib
 import json
@@ -148,3 +155,61 @@ def append(conn, envelope, payload, causation_id=None, correlation_id=None, rule
     )
     conn.commit()
     return APPENDED, record["event_id"]
+
+
+_READ_COLUMNS = (
+    "event_id", "ts_record", "valid_from", "valid_to", "type", "payload_json",
+    "causation_id", "correlation_id", "rule_version_ref", "source", "author", "hash",
+)
+
+
+def read(conn, since=None, until=None, decision_time=None):
+    """Relit le journal dans un ordre deterministe (base du rejeu).
+
+    Args:
+        conn: connexion SQLite ouverte (voir ``connect``).
+        since: borne inferieure incluse sur ``valid_from`` (temps du
+            monde), chaine ISO-8601 avec fuseau horaire explicite. ``None``
+            = pas de borne inferieure.
+        until: borne superieure exclue sur ``valid_from``, meme format.
+            ``None`` = pas de borne superieure.
+        decision_time: ne renvoie que les evenements deja connus du
+            systeme a cette date (``ts_record <= decision_time``) - permet
+            de rejouer "ce que l'on savait" a un instant donne. ``None`` =
+            tout ce qui est connu a ce jour.
+
+    Returns:
+        list[dict]: les evenements de l'intervalle, tries de maniere
+        stable (``ts_record`` puis ``event_id``), chacun restitue avec son
+        enveloppe et son payload d'origine (relus depuis ``payload_json``).
+        Deux appels avec les memes bornes renvoient toujours exactement la
+        meme sequence, quels que soient les evenements ajoutes hors de
+        l'intervalle entre-temps (rejeu deterministe).
+    """
+    clauses = []
+    params = []
+    if since is not None:
+        clauses.append("valid_from >= ?")
+        params.append(since)
+    if until is not None:
+        clauses.append("valid_from < ?")
+        params.append(until)
+    if decision_time is not None:
+        clauses.append("ts_record <= ?")
+        params.append(decision_time)
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    columns = ", ".join(_READ_COLUMNS)
+    rows = conn.execute(
+        f"SELECT {columns} FROM events {where} ORDER BY ts_record ASC, event_id ASC",
+        params,
+    ).fetchall()
+
+    events = []
+    for row in rows:
+        record = dict(zip(_READ_COLUMNS, row))
+        stored = json.loads(record.pop("payload_json"))
+        record["envelope"] = stored["envelope"]
+        record["payload"] = stored["payload"]
+        events.append(record)
+    return events
