@@ -1,0 +1,155 @@
+[
+  {
+    "name": "categorization/foodex",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "contrepartie": "Foodex",
+      "categorie": "achats-marchandises"
+    }
+  },
+  {
+    "name": "categorization/uber-eats",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "contrepartie": "Uber Eats",
+      "categorie": "ventes-plateforme"
+    }
+  },
+  {
+    "name": "categorization/deliveroo",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "contrepartie": "Deliveroo",
+      "categorie": "ventes-plateforme"
+    }
+  },
+  {
+    "name": "categorization/loyer",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "contrepartie": "*",
+      "mot_cle": "loyer",
+      "categorie": "charges-fixes"
+    }
+  },
+  {
+    "name": "kpi/ca",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Chiffre d'affaires",
+      "formule": "sum(ventes.montant)",
+      "unite": "EUR",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "kpi/marge",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Marge",
+      "formule": "ca - couts_matieres",
+      "unite": "EUR",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "kpi/food_cost",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Food cost",
+      "formule": "couts_matieres / ca",
+      "unite": "pourcentage",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "kpi/ticket_moyen",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Ticket moyen",
+      "formule": "ca / nombre_commandes",
+      "unite": "EUR",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "kpi/commandes_jour",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Commandes par jour",
+      "formule": "count(commandes) / count(jours)",
+      "unite": "commandes/jour",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "kpi/tresorerie",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Tresorerie",
+      "formule": "solde_bancaire",
+      "unite": "EUR",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "kpi/commission",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Commission plateforme",
+      "formule": "sum(commissions_plateformes)",
+      "unite": "EUR",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "kpi/dependance_fournisseur",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "label": "Dependance fournisseur",
+      "formule": "max(achats_par_fournisseur) / sum(achats)",
+      "unite": "pourcentage",
+      "nature": "fait"
+    }
+  },
+  {
+    "name": "reconciliation/seuil-ecart-encaissement",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "description": "ecart entre encaissement bancaire et vente declaree au-dela duquel une anomalie est creee",
+      "seuil_pourcentage": 0.05
+    }
+  },
+  {
+    "name": "alert-threshold/tresorerie-basse",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "description": "tresorerie en dessous de ce montant declenche une alerte",
+      "seuil_montant": 2000,
+      "unite": "EUR"
+    }
+  },
+  {
+    "name": "fx-rate/eur-mad",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "origin": "seed",
+    "body": {
+      "paire": "EUR/MAD",
+      "taux": 10.9
+    }
+  }
+]
