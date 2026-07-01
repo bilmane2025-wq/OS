@@ -195,10 +195,22 @@ class IdempotenceTests(EventStoreTestCase):
 
 
 class ImmutabilityTests(EventStoreTestCase):
+    _COLUMNS = (
+        "event_id", "ts_record", "valid_from", "valid_to", "type", "payload_json",
+        "causation_id", "correlation_id", "rule_version_ref", "source", "author", "hash",
+    )
+
     def setUp(self):
         super().setUp()
         envelope = _valid_envelope()
         event_store.append(self.conn, envelope, payload={"montant": 42.0})
+
+    def _full_row(self, event_id="EVT:KAMEHA:000001"):
+        columns = ", ".join(self._COLUMNS)
+        row = self.conn.execute(
+            f"SELECT {columns} FROM events WHERE event_id = ?", (event_id,)
+        ).fetchone()
+        return dict(zip(self._COLUMNS, row))
 
     def test_update_is_rejected(self):
         with self.assertRaises(sqlite3.IntegrityError):
@@ -224,6 +236,43 @@ class ImmutabilityTests(EventStoreTestCase):
                 "UPDATE events SET hash = ? WHERE event_id = ?",
                 ("0" * 64, "EVT:KAMEHA:000001"),
             )
+
+    def test_row_is_fully_unchanged_after_update_and_delete_attempts(self):
+        """Verifie l'integralite de la ligne (pas seulement un champ)."""
+        before = self._full_row()
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute(
+                "UPDATE events SET type = ?, source = ?, author = ?, payload_json = ? "
+                "WHERE event_id = ?",
+                ("PERCEPTION.Tampered", "attacker", "attacker", "{}", "EVT:KAMEHA:000001"),
+            )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute("DELETE FROM events WHERE event_id = ?", ("EVT:KAMEHA:000001",))
+
+        after = self._full_row()
+        self.assertEqual(before, after)
+        self.assertEqual(self._row_count(), 1)
+
+    def test_append_still_works_after_failed_update_and_delete_attempts(self):
+        """La garde d'immutabilite ne doit pas casser les ecritures legitimes suivantes."""
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute(
+                "UPDATE events SET type = ? WHERE event_id = ?",
+                ("PERCEPTION.Tampered", "EVT:KAMEHA:000001"),
+            )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.conn.execute("DELETE FROM events WHERE event_id = ?", ("EVT:KAMEHA:000001",))
+
+        new_envelope = _valid_envelope(id="EVT:KAMEHA:000002")
+        status, event_id = event_store.append(self.conn, new_envelope, payload={"montant": 7.0})
+
+        self.assertEqual(status, event_store.APPENDED)
+        self.assertEqual(event_id, "EVT:KAMEHA:000002")
+        self.assertEqual(self._row_count(), 2)
+
+        original = self._full_row("EVT:KAMEHA:000001")
+        self.assertEqual(original["type"], "PERCEPTION.InvoiceReceived")
 
 
 if __name__ == "__main__":
