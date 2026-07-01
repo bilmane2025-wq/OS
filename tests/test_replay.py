@@ -186,6 +186,25 @@ class DeterministicReplayTests(ReplayTestCase):
         replayed = event_store.read(self.conn)
         self.assertEqual([e["event_id"] for e in replayed], original_order)
 
+    def test_full_journal_replay_twice_yields_identical_result(self):
+        """Rejeu complet du journal (aucun filtre), execute deux fois de
+        suite : ordre identique, contenu identique, meme nombre
+        d'evenements (non-regression demandee par la revue externe)."""
+        for i in range(1, 6):
+            self._append(
+                f"EVT:KAMEHA:{i:06d}", f"2028-04-{i:02d}T00:00:00Z", f"2028-04-{i:02d}T00:00:00Z"
+            )
+
+        first_pass = event_store.read(self.conn)
+        second_pass = event_store.read(self.conn)
+
+        self.assertEqual(len(first_pass), 5)
+        self.assertEqual(len(first_pass), len(second_pass))
+        self.assertEqual(
+            [e["event_id"] for e in first_pass], [e["event_id"] for e in second_pass]
+        )
+        self.assertEqual(first_pass, second_pass)
+
 
 if __name__ == "__main__":
     unittest.main()
