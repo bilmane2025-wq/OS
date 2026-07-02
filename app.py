@@ -5,9 +5,12 @@ Sprint 1 / T-M00-1 (amorcage) : arborescence du projet, schema SQLite complet
 HTTP local minimal (stdlib uniquement, aucune dependance externe, aucun
 appel reseau sortant - conforme a la Constitution : zero API, zero cloud).
 
-La boucle de synchronisation vivante (poll inbox -> pipeline -> graphe ->
-calcul -> vues) est batie plus tard (T-M00-3) ; ce fichier ne fait
-aujourd'hui que demarrer le socle.
+La boucle de synchronisation vivante (T-M00-3) fait vivre le systeme
+sans humain : poll de l'inbox a cadence configurable -> pipeline
+d'ingestion (12 etapes, modules Sprints 2-3) -> repli incremental dans le
+graphe -> recalcul cible des KPI (DAG M12) -> reconciliation -> watchdog
+des sources -> alertes groupees sous budget d'attention. Le serveur local
+sert les vues pendant que la boucle tourne en arriere-plan.
 """
 import argparse
 import http.server
@@ -274,15 +277,197 @@ def seed(db_path=DEFAULT_DB_PATH):
         conn.close()
 
 
+DEFAULT_INBOX_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "inbox")
+DEFAULT_ARCHIVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "archive")
+DEFAULT_INTERVAL_SECONDS = 5.0
+
+
+def _ingest_with_parser(conn, inbox_dir, archive_dir, filename, parse_outcome, hash_, now):
+    """Tronc commun de la boucle pour un fichier traite par un parseur
+    specialise : archivage + journalisation de l'ingestion (memes
+    garanties que ``intake_folder.process_file``)."""
+    from uuid import uuid4
+
+    from perception import dedup, intake_folder
+
+    import_id = f"ING:{uuid4().hex}"
+    appended = parse_outcome.get("appended", [])
+    if "event_id" in parse_outcome:
+        appended = appended + [parse_outcome["event_id"]]
+    quarantined = parse_outcome.get("quarantined", [])
+    anomaly_count = len(quarantined) + (1 if parse_outcome.get("anomaly_id") else 0)
+
+    intake_folder.archive_file(inbox_dir, archive_dir, filename, hash_)
+    dedup.record_ingestion(
+        conn, import_id, source="inbox", file=filename, hash_=hash_,
+        records=parse_outcome.get("records", 1), new_records=len(appended),
+        duplicates=parse_outcome.get("duplicates", 0), anomalies=anomaly_count,
+        errors=0, status=parse_outcome.get("status", "parsed"), ts=now,
+    )
+    return {"status": parse_outcome.get("status"), "filename": filename,
+            "import_id": import_id, "event_ids": appended}
+
+
+def _ingest_one(conn, inbox_dir, archive_dir, filename):
+    """Pipeline d'ingestion d'un fichier depose (les 12 etapes de la
+    Conception 8.3, incarnees par les modules Sprints 2-3) : detection ->
+    integrite/dedup fichier -> routage -> extraction par le parseur
+    specialise quand un profil/une regle existe -> validation M07 ->
+    normalisation M04 -> dedup ligne M08 -> journalisation -> archivage.
+    Sans profil ni parseur applicable, le fichier suit la voie generique
+    de ``process_file`` (DocumentReceived ou quarantaine) - jamais une
+    interpretation devinee."""
+    from datetime import datetime, timezone
+
+    from perception import dedup, intake_folder
+    from perception.parsers import csv_parser, pdf_parser, xlsx_parser
+
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    path = os.path.join(inbox_dir, filename)
+    route = intake_folder.route_for(filename)
+    hash_ = dedup.file_hash(path)
+
+    if dedup.file_seen(conn, hash_) or route not in ("csv", "xlsx", "pdf"):
+        # Doublon de fichier, email, image ou format inconnu : la voie
+        # generique porte deja toutes les garanties (dedup, quarantaine,
+        # extraction recursive des PJ d'email, archivage, journal).
+        outcome = intake_folder.process_file(conn, inbox_dir, archive_dir, filename)
+        event_ids = [outcome["event_id"]] if "event_id" in outcome else []
+        for attachment in outcome.get("attachment_outcomes", []):
+            if "event_id" in attachment:
+                event_ids.append(attachment["event_id"])
+        outcome["event_ids"] = event_ids
+        return outcome
+
+    profile = csv_parser.find_profile(conn, filename)
+    if route == "csv" and profile is not None:
+        parsed = csv_parser.parse(conn, path, profile=profile)
+    elif route == "xlsx" and profile is not None:
+        parsed = xlsx_parser.parse(conn, path, profile=profile)
+    elif route == "pdf":
+        parsed = pdf_parser.parse(conn, path)
+    else:
+        # csv/xlsx sans profil : anomalie « profil manquant », le fichier
+        # est archive sans jamais etre interprete.
+        parsed = csv_parser.parse(conn, path, profile=None)
+
+    outcome = _ingest_with_parser(conn, inbox_dir, archive_dir, filename, parsed, hash_, now)
+    if profile is not None and parsed.get("status") == "parsed":
+        from governance import observability
+        # La source attendue vient d'etre recue : sa fraicheur est mise a
+        # jour si elle est declaree au registre des sources (M33).
+        source_id = profile["name"].split("/", 1)[1]
+        row = conn.execute("SELECT 1 FROM sources WHERE source_id = ?",
+                           (source_id,)).fetchone()
+        if row is not None:
+            observability.mark_seen(conn, source_id, now)
+    return outcome
+
+
+def sync_cycle(conn, inbox_dir=DEFAULT_INBOX_DIR, archive_dir=DEFAULT_ARCHIVE_DIR):
+    """Un cycle de la boucle vivante (T-M00-3) : inbox -> evenements ->
+    graphe -> recalcul **incremental** -> reconciliation -> watchdog ->
+    alertes groupees sous budget d'attention.
+
+    Jamais de recalcul global : seuls les evenements nouvellement ingeres
+    sont replies dans le graphe, et seules les derivations dependantes de
+    leurs types sont recalculees (DAG M12).
+
+    Returns:
+        dict: ``{"ingested": [...], "new_events": n, "recomputed": [...],
+        "reconciliation": ... , "watchdog": [...], "attention": {...}}``.
+    """
+    from calc import derivation, kpi_catalog
+    from core import event_store
+    from experience import attention, proactivity
+    from governance import audit, observability
+    from graph import graph_engine
+    from perception import intake_folder
+
+    kpi_catalog.register_derivations()  # idempotent
+
+    ingested = [
+        _ingest_one(conn, inbox_dir, archive_dir, filename)
+        for filename in intake_folder.scan_inbox(inbox_dir)
+    ]
+
+    new_event_ids = {eid for outcome in ingested for eid in outcome.get("event_ids", [])}
+    new_events = [e for e in event_store.read(conn) if e["event_id"] in new_event_ids]
+
+    recomputed = []
+    for event in new_events:
+        graph_engine.apply(conn, event)
+        recomputed.extend(derivation.on_event(conn, event).keys())
+
+    reconciliation = None
+    if new_events:
+        already_open = conn.execute(
+            "SELECT 1 FROM anomalies WHERE type = 'reconciliation/ecart-encaissement-vente' "
+            "AND state = 'ouverte'").fetchone()
+        if already_open is None:
+            reconciliation = audit.reconcile_collections_vs_sales(conn)
+
+    watchdog_alerts = observability.watchdog(conn)
+
+    grouped = proactivity.group_alerts(proactivity.collect_alerts(conn))
+    budgeted = attention.budget(grouped)
+
+    return {
+        "ingested": ingested,
+        "new_events": len(new_events),
+        "recomputed": sorted(set(recomputed)),
+        "reconciliation": reconciliation,
+        "watchdog": watchdog_alerts,
+        "attention": budgeted,
+    }
+
+
+def run_loop(db_path=DEFAULT_DB_PATH, inbox_dir=DEFAULT_INBOX_DIR,
+             archive_dir=DEFAULT_ARCHIVE_DIR, interval_seconds=DEFAULT_INTERVAL_SECONDS,
+             cycles=None, stop_event=None):
+    """Boucle de synchronisation permanente : poll de l'inbox a cadence
+    configurable. ``cycles`` limite le nombre de tours (tests) ;
+    ``stop_event`` (threading.Event) arrete proprement."""
+    import threading
+    import time
+
+    stop_event = stop_event or threading.Event()
+    completed = 0
+    while not stop_event.is_set():
+        conn = sqlite3.connect(db_path)
+        try:
+            sync_cycle(conn, inbox_dir, archive_dir)
+        finally:
+            conn.close()
+        completed += 1
+        if cycles is not None and completed >= cycles:
+            break
+        stop_event.wait(interval_seconds)
+    return completed
+
+
 def main():
     parser = argparse.ArgumentParser(description="Enterprise OS - serveur local")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--db", default=DEFAULT_DB_PATH)
+    parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS,
+                        help="cadence (secondes) de la boucle de synchronisation")
+    parser.add_argument("--no-loop", action="store_true",
+                        help="demarrer le serveur sans la boucle vivante")
     args = parser.parse_args()
 
     init_db(args.db)
     seed(args.db)
+
+    if not args.no_loop:
+        import threading
+        poller = threading.Thread(
+            target=run_loop,
+            kwargs={"db_path": args.db, "interval_seconds": args.interval},
+            daemon=True, name="eos-sync-loop")
+        poller.start()
+
     print(f"Enterprise OS demarre sur http://{args.host}:{args.port} (DB: {args.db})")
     run_server(args.host, args.port, args.db)
 
