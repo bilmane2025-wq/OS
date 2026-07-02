@@ -11,6 +11,7 @@ aujourd'hui que demarrer le socle.
 """
 import argparse
 import http.server
+import json
 import os
 import sqlite3
 
@@ -174,31 +175,103 @@ def init_db(db_path=DEFAULT_DB_PATH):
 
 
 class _StatusHandler(http.server.BaseHTTPRequestHandler):
-    """Poignee HTTP minimale : prouve que le serveur local repond.
+    """Serveur local des vues (Sprint 7, T-M25-*) : chaque ecran est
+    servi sur ``localhost``, sans aucun appel externe. La racine ``/``
+    redirige la lecture vers la Vue Instantanee (10 s), point d'entree
+    officiel du dirigeant."""
 
-    Sera remplacee/etendue par experience/web aux sprints UI (T-M25-*).
-    """
+    db_path = DEFAULT_DB_PATH  # surcharge par build_server(db_path=...)
+
+    def _send(self, body, content_type="text/html; charset=utf-8", status=200):
+        payload = body.encode("utf-8") if isinstance(body, str) else body
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _connect(self):
+        return sqlite3.connect(self.db_path)
 
     def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(b"Enterprise OS - noyau vivant\n")
+        # Imports locaux : les vues dependent du reste du systeme, alors
+        # que init_db/build_server doivent rester importables seuls.
+        from urllib.parse import parse_qs, urlparse
+
+        from experience import views
+        from intent import conversation, search
+
+        parsed = urlparse(self.path)
+        route = parsed.path
+        params = parse_qs(parsed.query)
+
+        if route == "/":
+            self._send("Enterprise OS - noyau vivant\n",
+                       content_type="text/plain; charset=utf-8")
+            return
+        if route == "/base.css":
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "experience", "web", "base.css"), "rb") as f:
+                self._send(f.read(), content_type="text/css; charset=utf-8")
+            return
+
+        conn = self._connect()
+        try:
+            if route == "/instant":
+                self._send(views.render_instant(conn))
+            elif route == "/daily":
+                self._send(views.render_daily(conn))
+            elif route == "/detail":
+                kpi_name = (params.get("kpi") or [""])[0]
+                self._send(views.render_detail(conn, kpi_name))
+            elif route == "/inbox":
+                self._send(views.render_inbox(conn))
+            elif route == "/forms":
+                self._send(views.render_forms())
+            elif route == "/health":
+                self._send(views.render_health(conn))
+            elif route == "/search":
+                results = search.query(conn, (params.get("q") or [""])[0])
+                self._send(json.dumps(results, ensure_ascii=False),
+                           content_type="application/json; charset=utf-8")
+            elif route == "/ask":
+                answer = conversation.ask(conn, (params.get("q") or [""])[0])
+                self._send(json.dumps(answer, ensure_ascii=False),
+                           content_type="application/json; charset=utf-8")
+            else:
+                self._send("introuvable", status=404)
+        finally:
+            conn.close()
 
     def log_message(self, format, *args):
         pass  # silence par defaut : pas de bruit console (regle UX figee)
 
 
-def build_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
-    return http.server.HTTPServer((host, port), _StatusHandler)
+def build_server(host=DEFAULT_HOST, port=DEFAULT_PORT, db_path=DEFAULT_DB_PATH):
+    handler = type("_BoundHandler", (_StatusHandler,), {"db_path": db_path})
+    return http.server.HTTPServer((host, port), handler)
 
 
-def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT):
-    server = build_server(host, port)
+def run_server(host=DEFAULT_HOST, port=DEFAULT_PORT, db_path=DEFAULT_DB_PATH):
+    server = build_server(host, port, db_path)
     try:
         server.serve_forever()
     finally:
         server.server_close()
+
+
+def seed(db_path=DEFAULT_DB_PATH):
+    """Amorce les regles seed (T-M02-2) et les profils source (T-M05-2)
+    au demarrage. Idempotent : les deux chargeurs ne reseedent jamais une
+    regle qui possede deja une version."""
+    from core import rules
+    from perception.parsers import csv_parser
+
+    conn = sqlite3.connect(db_path)
+    try:
+        rules.load_seed_rules(conn)
+        csv_parser.load_profiles_as_rules(conn)
+    finally:
+        conn.close()
 
 
 def main():
@@ -209,8 +282,9 @@ def main():
     args = parser.parse_args()
 
     init_db(args.db)
+    seed(args.db)
     print(f"Enterprise OS demarre sur http://{args.host}:{args.port} (DB: {args.db})")
-    run_server(args.host, args.port)
+    run_server(args.host, args.port, args.db)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+/* Enterprise OS - style commun des vues locales. Une idee par ecran,
+   hierarchie evidente, zero surcharge (Constitution, principes UX). */
+body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 3rem auto;
+       max-width: 640px; color: #1a1a1a; line-height: 1.5; }
+h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; }
+.phrase { font-size: 1.6rem; font-weight: 600; margin-bottom: 1rem; }
+.estime { color: #8a6d00; font-style: italic; } /* un estime ne ressemble jamais a un fait */
+.alerte { padding: .4rem .6rem; margin: .3rem 0; border-left: 4px solid #c0392b;
+          background: #fdf3f2; list-style: none; }
+table { border-collapse: collapse; width: 100%; }
+td, th { border-bottom: 1px solid #e5e5e5; padding: .4rem .5rem; text-align: left; }
+nav a { margin-right: 1rem; }
+label { display: block; margin: .5rem 0; }
+input { display: block; width: 100%; padding: .3rem; margin-top: .2rem; }
+form { border: 1px solid #e5e5e5; border-radius: 8px; padding: 1rem; margin: 1rem 0; }

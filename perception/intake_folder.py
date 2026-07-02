@@ -222,6 +222,83 @@ def process_file(conn, inbox_dir, archive_dir, filename):
     }
 
 
+def normalize_records(conn, records, event_type, source, keycols, nature="fait", score=1.0,
+                      valid_from_field=None):
+    """Emballe des enregistrements bruts (sortie d'un parseur) en
+    evenements ``PERCEPTION.*`` avec enveloppe complete (T-M04-2).
+
+    C'est le contrat M04 du backlog : « chaque parseur renvoie des
+    enregistrements bruts ; M04 les emballe en evenements ». Ne calcule
+    rien, ne decide rien : chaque enregistrement devient un evenement
+    verbatim, deduplique par empreinte de ligne (``dedup.row_hash`` sur
+    ``keycols``, T-M08-1) - rejouer le meme lot ne cree aucun doublon.
+
+    Args:
+        conn: connexion SQLite ouverte.
+        records: liste de dicts (enregistrements bruts mappes).
+        event_type: type d'evenement produit (ex.
+            ``"PERCEPTION.StatementLine"``).
+        source: provenance (ex. ``"inbox/releve.csv"``).
+        keycols: colonnes-cles pour l'empreinte de ligne.
+        nature: nature de confiance des evenements produits.
+        score: score de confiance.
+        valid_from_field: champ de l'enregistrement portant la date de
+            validite (temps du monde) ; repli sur "maintenant" si absent
+            ou invalide - jamais une date inventee.
+
+    Returns:
+        dict: ``{"appended": [event_id...], "duplicates": int}``.
+    """
+    now = _now_iso()
+    appended, duplicates = [], 0
+    for record in records:
+        row_hash = dedup.row_hash(record, keycols)
+        # Dedup par empreinte de ligne (T-M08-1) : la meme ligne metier
+        # (memes colonnes-cles) deja emballee en evenement - meme lors
+        # d'un import anterieur, donc avec un ts_record different - n'est
+        # jamais reinseree. payload_json est du JSON canonique
+        # (sort_keys), le motif recherche est donc deterministe.
+        already = conn.execute(
+            "SELECT event_id FROM events WHERE type = ? AND payload_json LIKE ?",
+            (event_type, f'%"row_hash": "{row_hash}"%'),
+        ).fetchone()
+        if already is not None:
+            duplicates += 1
+            continue
+        valid_from = now
+        if valid_from_field and record.get(valid_from_field):
+            candidate = str(record[valid_from_field])
+            try:
+                parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+                if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+                    valid_from = candidate
+            except ValueError:
+                pass  # date illisible -> repli sur maintenant, sans invention
+
+        envelope = make_envelope(
+            id=f"EVT:{uuid4().hex}",
+            type_=event_type,
+            label=f"{event_type} ({source})",
+            source=source,
+            author=DEFAULT_AUTHOR,
+            valid_from=valid_from,
+            ts_record=now,
+            nature=nature,
+            score=score,
+            owner="system",
+            visibility="interne",
+            authority=1,
+        )
+        status, event_id = event_store.append(
+            conn, envelope, payload={"record": record, "row_hash": row_hash}
+        )
+        if status == event_store.DUPLICATE:
+            duplicates += 1
+        else:
+            appended.append(event_id)
+    return {"appended": appended, "duplicates": duplicates}
+
+
 def process_inbox(conn, inbox_dir, archive_dir):
     """Traite tous les fichiers actuellement presents dans ``inbox_dir``,
     dans un ordre determiste (ordre alphabetique des noms).

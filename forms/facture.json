@@ -1,0 +1,11 @@
+{
+  "form": "facture",
+  "label": "Saisir une facture fournisseur",
+  "event_type": "PERCEPTION.InvoiceReceived",
+  "fields": [
+    {"name": "fournisseur", "label": "Fournisseur", "type": "text", "required": true},
+    {"name": "montant", "label": "Montant TTC (EUR)", "type": "number", "required": true},
+    {"name": "date", "label": "Date de la facture", "type": "date", "required": true},
+    {"name": "compte", "label": "Compte comptable", "type": "text", "required": false}
+  ]
+}

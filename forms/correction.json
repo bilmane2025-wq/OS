@@ -1,0 +1,11 @@
+{
+  "form": "correction",
+  "label": "Corriger une donnee",
+  "event_type": "HUMAN.Correction",
+  "fields": [
+    {"name": "cible", "label": "Objet/evenement corrige (identifiant)", "type": "text", "required": true},
+    {"name": "champ", "label": "Champ corrige", "type": "text", "required": true},
+    {"name": "valeur", "label": "Nouvelle valeur", "type": "text", "required": true},
+    {"name": "motif", "label": "Pourquoi", "type": "text", "required": false}
+  ]
+}

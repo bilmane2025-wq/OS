@@ -1,0 +1,71 @@
+[
+  {
+    "name": "banque-releve",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "note": "Releve bancaire CSV (export banque belge type Belfius/KBC simplifie).",
+    "body": {
+      "match": "releve",
+      "delimiter": ";",
+      "encoding": "utf-8",
+      "event_type": "PERCEPTION.StatementLine",
+      "mapping": {
+        "Date valeur": "date",
+        "Montant": "montant",
+        "Devise": "devise",
+        "Contrepartie": "contrepartie",
+        "Communication": "libelle"
+      },
+      "keycols": ["date", "montant", "contrepartie", "libelle"],
+      "valid_from_field": null,
+      "quality": {
+        "required": ["date", "montant"],
+        "numeric": ["montant"]
+      }
+    }
+  },
+  {
+    "name": "plateforme-commandes",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "note": "Export commandes plateforme (Uber Eats / Deliveroo, CSV standard).",
+    "body": {
+      "match": "commandes",
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "event_type": "PERCEPTION.OrderObserved",
+      "mapping": {
+        "Order ID": "commande_id",
+        "Date": "date",
+        "Total": "montant",
+        "Commission": "commission",
+        "Plateforme": "plateforme"
+      },
+      "keycols": ["commande_id"],
+      "valid_from_field": null,
+      "quality": {
+        "required": ["commande_id", "montant"],
+        "numeric": ["montant", "commission"]
+      }
+    }
+  },
+  {
+    "name": "balance-comptable",
+    "valid_from": "2020-01-01T00:00:00Z",
+    "note": "Balance comptable XLSX (export logiciel comptable).",
+    "body": {
+      "match": "balance",
+      "sheet": "Feuille1",
+      "event_type": "PERCEPTION.FactObserved",
+      "mapping": {
+        "Compte": "compte",
+        "Libelle": "libelle",
+        "Debit": "debit",
+        "Credit": "credit"
+      },
+      "keycols": ["compte", "debit", "credit"],
+      "quality": {
+        "required": ["compte"],
+        "numeric": ["debit", "credit"]
+      }
+    }
+  }
+]

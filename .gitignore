@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# Artefacts temporaires des tests (bases jetables creees par setUp).
+tests/_tmp_*
+
 # La DB est generee localement (init_db) - on ne versionne pas le binaire.
 data/eos.db
 

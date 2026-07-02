@@ -1,0 +1,12 @@
+{
+  "form": "vente",
+  "label": "Saisir une vente",
+  "event_type": "PERCEPTION.OrderObserved",
+  "fields": [
+    {"name": "montant", "label": "Montant (EUR)", "type": "number", "required": true},
+    {"name": "date", "label": "Date", "type": "date", "required": true},
+    {"name": "commande_id", "label": "Reference commande", "type": "text", "required": false},
+    {"name": "plateforme", "label": "Canal / plateforme", "type": "text", "required": false},
+    {"name": "commission", "label": "Commission (EUR)", "type": "number", "required": false}
+  ]
+}
