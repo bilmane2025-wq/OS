@@ -1,0 +1,56 @@
+[
+  {
+    "intent": "ca_periode",
+    "patterns": ["combien gagn", "chiffre d'affaires", "combien de ca", "quel est le ca"],
+    "kpi": "ca",
+    "action": "Deposer les exports de ventes manquants pour affiner le chiffre."
+  },
+  {
+    "intent": "tresorerie",
+    "patterns": ["tresorerie", "combien en banque", "solde bancaire", "combien de cash"],
+    "kpi": "tresorerie",
+    "action": "Deposer le dernier releve bancaire si la fraicheur est insuffisante."
+  },
+  {
+    "intent": "marge",
+    "patterns": ["marge", "combien de benefice", "rentabilite"],
+    "kpi": "marge",
+    "action": "Verifier les factures fournisseurs non saisies avant de conclure."
+  },
+  {
+    "intent": "food_cost",
+    "patterns": ["food cost", "cout matiere", "cout des matieres"],
+    "kpi": "food_cost",
+    "action": "Comparer au seuil cible et renegocier les achats si depassement."
+  },
+  {
+    "intent": "ticket_moyen",
+    "patterns": ["ticket moyen", "panier moyen"],
+    "kpi": "ticket_moyen",
+    "action": "Analyser les commandes recentes pour augmenter le panier."
+  },
+  {
+    "intent": "commission",
+    "patterns": ["commission", "combien prennent les plateformes", "frais plateforme"],
+    "kpi": "commission",
+    "action": "Rapprocher la commission du taux contractuel de chaque plateforme."
+  },
+  {
+    "intent": "fournisseur_principal",
+    "patterns": ["quel fournisseur coute le plus", "fournisseur le plus cher", "dependance fournisseur"],
+    "kpi": "dependance_fournisseur",
+    "action": "Demander un devis a un fournisseur alternatif si la dependance est trop forte."
+  },
+  {
+    "intent": "que_faire",
+    "patterns": ["que dois-je faire", "quoi faire", "priorites", "que faire aujourd'hui"],
+    "kpi": null,
+    "action": "Traiter la premiere anomalie de la liste."
+  },
+  {
+    "intent": "recherche",
+    "patterns": ["ou est", "retrouve", "cherche"],
+    "kpi": null,
+    "action": "Ouvrir la fiche du resultat pour acceder a sa preuve."
+  }
+]

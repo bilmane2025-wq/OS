@@ -1,0 +1,11 @@
+{
+  "form": "depense",
+  "label": "Saisir une depense",
+  "event_type": "PERCEPTION.StatementLine",
+  "fields": [
+    {"name": "libelle", "label": "Libelle", "type": "text", "required": true},
+    {"name": "montant", "label": "Montant (EUR, negatif = sortie)", "type": "number", "required": true},
+    {"name": "date", "label": "Date", "type": "date", "required": true},
+    {"name": "contrepartie", "label": "Contrepartie", "type": "text", "required": false}
+  ]
+}
