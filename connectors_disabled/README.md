@@ -1,17 +1,27 @@
-# Connecteurs API desactives
+# Connecteurs API desactives (T-CONN-1)
 
-Ce dossier accueille, module par module, les connecteurs API futurs (banque,
-Uber, Deliveroo, Meta, comptable...). **Aucun n'est implemente au MVP.**
+Chaque source API future (banque, Uber Eats, Deliveroo, Meta, comptable)
+a ici son module **inerte** : il expose le contrat d'ingestion
+(`is_enabled()`, `fetch(conn)`, `EVENT_TYPE`) mais **leve
+`ConnectorDisabledError` (« connecteur non activé ») avant toute
+action** - il ne lit rien, n'ecrit rien, ne simule aucune API, ne
+produit jamais la moindre donnee (Backlog, contraintes n.5-6 ; regle
+anti-invention).
 
-Contrat figé (T-CONN-1, Sprint 8) :
-- Chaque module `<x>_api.py` expose le meme contrat d'ingestion que la
-  passerelle de perception (M04), mais **leve une erreur explicite**
-  (`ConnecteurNonActive`) au lieu de produire la moindre donnee.
-- Aucune donnee n'est jamais simulee ou inventee : en attendant l'activation,
-  la source correspondante s'utilise via `data/inbox/` (fichier depose /
-  email) - c'est le mode officiel, jamais un pis-aller.
-- Activation future = brancher le module sur la passerelle M04, sans toucher
-  au reste du systeme.
+En attendant l'activation, chaque source s'utilise par **depot de
+fichier** dans `data/inbox/` - c'est le mode officiel, pas un
+pis-aller :
 
-Ce dossier est vide au sens fonctionnel tant que T-CONN-1 (Sprint 8) n'est
-pas construit.
+| Module | Source | En attendant, deposer |
+|---|---|---|
+| `bank_api.py` | banque (bank-feed) | export CSV du releve (profil `banque-releve`) |
+| `uber_eats_api.py` | Uber Eats | export CSV des commandes (profil `plateforme-commandes`) |
+| `deliveroo_api.py` | Deliveroo | export CSV des commandes (profil `plateforme-commandes`) |
+| `meta_api.py` | Meta | export CSV des statistiques |
+| `accounting_api.py` | logiciel comptable | balance XLSX (profil `balance-comptable`) |
+
+**Activation future** = implementer `fetch` dans le module concerne pour
+qu'il produise ses enregistrements bruts et les emballe via la meme
+passerelle M04 (`perception.intake_folder.normalize_records`), sans
+toucher au reste du systeme. Le message d'erreur de chaque connecteur
+indique deja le fichier a deposer a la place.
