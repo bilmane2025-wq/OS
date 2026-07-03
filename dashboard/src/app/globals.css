@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/*
+ * Jarvis HUD — mode sombre sélectionné (pas un flip automatique).
+ * Palette validée (CVD, contraste) contre la surface sombre #1a1a19.
+ */
+:root {
+  /* Surfaces */
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #222221;
+  --surface-3: #2a2a28;
+
+  /* Encres */
+  --ink-primary: #ffffff;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #898781;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+
+  /* Catégoriel (pas sombre, ordre fixe — jamais cyclé) */
+  --series-1: #3987e5; /* blue    */
+  --series-2: #199e70; /* aqua    */
+  --series-3: #c98500; /* yellow  */
+  --series-4: #008300; /* green   */
+  --series-5: #9085e9; /* violet  */
+  --series-6: #e66767; /* red     */
+  --series-7: #d55181; /* magenta */
+  --series-8: #d95926; /* orange  */
+
+  /* Statut (réservé — jamais réutilisé comme série) */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+
+  /* Delta positif (texte) */
+  --delta-good: #0ca30c;
+
+  /* Accent Jarvis */
+  --jarvis: #3987e5;
+  --jarvis-glow: rgba(57, 135, 229, 0.16);
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink: var(--ink-primary);
+  --color-ink-2: var(--ink-secondary);
+  --color-ink-3: var(--ink-muted);
+  --color-grid: var(--grid);
+  --color-baseline: var(--baseline);
+  --color-hairline: var(--border);
+  --color-s1: var(--series-1);
+  --color-s2: var(--series-2);
+  --color-s3: var(--series-3);
+  --color-s4: var(--series-4);
+  --color-s5: var(--series-5);
+  --color-s6: var(--series-6);
+  --color-s7: var(--series-7);
+  --color-s8: var(--series-8);
+  --color-good: var(--status-good);
+  --color-warning: var(--status-warning);
+  --color-serious: var(--status-serious);
+  --color-critical: var(--status-critical);
+  --color-jarvis: var(--jarvis);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--jarvis-glow);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--baseline) transparent;
+}
+
+/* Pulsation du cœur Jarvis (boucle vivante) */
+@keyframes jarvis-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.jarvis-pulse {
+  animation: jarvis-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes jarvis-listening {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.35); opacity: 0.4; }
+}
+.jarvis-listening {
+  animation: jarvis-listening 1.1s ease-in-out infinite;
+}
+
+/* Chiffres tabulaires : uniquement colonnes/axes à aligner */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
