@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "version": "0.1",
+    "generated": "2026-07-04",
+    "source": "Conversation Claude — configuration Jarvis Command Center",
+    "regle": "Aucune valeur inventée. 'inconnu' = non fourni. 'estimé' = calculé depuis données historiques, à confirmer.",
+    "sections_validees": ["1"],
+    "sections_en_attente": ["2 (partiellement pré-remplie, non validée)", "3", "4", "5", "6"]
+  },
+
+  "group": {
+    "owner": { "name": "Bilal Kaddouri", "jarvisCallsMe": "Bilal" },
+    "holding": null,
+    "detention": "parts en direct (pas de holding)",
+    "consolidationCurrency": "EUR",
+    "futureEntity": { "country": "Maroc", "currency": "MAD", "status": "à venir", "fxRate_EUR_MAD": "inconnu" },
+    "entitesIgnorees": ["Urban Core Group SRL", "FAMO Seafood", "Crousty Guys (abandonné, n'existera pas)"]
+  },
+
+  "entities": [
+    {
+      "id": "kameha",
+      "name": "Kameha Poke",
+      "legalName": "AYBI GROUP SRL",
+      "bce": "1028.675.991",
+      "type": "restaurant",
+      "country": "BE",
+      "city": "Wavre",
+      "currency": "EUR",
+      "timezone": "Europe/Brussels",
+      "cogerant": "Aymane Bonouh",
+      "channels": [
+        { "name": "Site web", "type": "direct", "commissionRate": 0, "note": "canal n°1 historique (~85 868 € sur oct 2025→juin 2026)" },
+        { "name": "Takeaway.com", "type": "plateforme", "commissionRate": "≈0.23 (estimé: 18 119 € commission / 77 807 € brut historique) — à confirmer", "contact": "Ruben Pécriaux" },
+        { "name": "Comptoir", "type": "direct", "commissionRate": 0 },
+        { "name": "Uber Eats", "type": "plateforme", "status": "onboarding bloqué 3+ mois, possiblement suspendu", "commissionRate": "inconnu", "contact": "+32 2 808 66 28 / restaurants.belgium@uber.com" },
+        { "name": "Deliveroo", "type": "plateforme", "status": "inconnu (contact existant: Samia Meddah)", "commissionRate": "inconnu" }
+      ],
+      "pos": {
+        "software": "inconnu",
+        "exportFormats": "inconnu",
+        "modeActuel": "journaux de caisse saisis manuellement (format: Tkw / Rev(carte) / Cash / Total / Fdc)"
+      },
+      "suppliers": [
+        { "name": "iFood", "share": "≈48% du food cost (mesuré historique)", "role": "produits asiatiques" },
+        { "name": "Foodex", "share": "inconnu", "note": "compte C64478 ; commande avant 16h pour J+1 ; saumon HORS catalogue ; litige avoir 516,01 € ouvert", "email": "commande@foodex.be" },
+        { "name": "Seamar", "share": "inconnu", "role": "poisson (saumon/thon)", "email": "order@seamar.be" },
+        { "name": "Dirk Marchand", "share": "inconnu", "role": "fruits/légumes", "note": "litige surfacturation récurrent" }
+      ],
+      "banks": [
+        { "name": "Fintro", "role": "principale", "iban": "BE69 1431 3360 5578 (mandat CodaClean signé)", "exportFormat": "CODA via CodaClean (bank-feed) — à confirmer actif", "contact": "Tom Van Herle" },
+        { "name": "Revolut Business", "role": "secondaire", "exportFormat": "CSV — à confirmer", "soldeConnu": "≈9 169 € (dernière lecture)" }
+      ],
+      "accounting": { "comptable": "Brahim", "software": "ClearFacts/Coda — accès en cours", "balanceFrequency": "inconnu", "note": "Q1 2026 en cours ; ex-comptable Youssef El Yaakoube inactif" },
+      "targets": {
+        "foodCostPct": { "current": "≈32% (mesuré historique)", "target": "inconnu" },
+        "avgTicket": { "current": "≈45 € (historique)", "target": "inconnu" },
+        "cashAlertThreshold": "inconnu",
+        "ordersPerDay": { "current": "≈15/j historique (3 970 commandes / 267 j)", "target": "inconnu" }
+      },
+      "team": [
+        { "name": "Sacha Debast", "role": "inconnu", "contract": "Article 61 CPAS Wavre", "hoursPerWeek": "inconnu" },
+        { "name": "autres", "status": "inconnu" }
+      ],
+      "openingHours": "inconnu",
+      "peakDays": "inconnu",
+      "referenceData": {
+        "jumeau": "kameha_os.db (fact_ledger_daily 267 j : 2025-10-02 → 2026-06-28)",
+        "historique": { "CA": "≈178 987 €", "beneficeEstime": "≈44 846 € (≈25%)", "commandes": 3970, "clients": 1081, "recurrents": "≈40%" },
+        "mixPaiementMesure3j": { "carte": "50%", "takeaway": "35%", "cash": "14%", "note": "cash réel 14% >> hypothèse 5,5% — hypothèse à réviser" },
+        "caisseRecente": { "2026-06-29": 882.70, "2026-06-30": "1198,90 calculé / 1202,90 saisi — écart +4 € OUVERT", "2026-07-01": 1028.38 },
+        "anomaliesOuvertes": ["écart caisse +4,00 € (30/06)", "signification 'Fdc' non confirmée (17,60 € / 24,20 €)"]
+      },
+      "assurances": [
+        { "name": "AXA Talensia Horeca", "ref": "1372148", "courtier": "YAGO (Vassilios Drogou)" },
+        { "name": "Allianz accidents du travail", "ref": "01PK08059136" },
+        { "name": "RC Exploitation", "courtier": "MAXEL (Yvan Krug)", "note": "prime 163,71 € impayée échue 23/04 — à vérifier" }
+      ]
+    },
+    {
+      "id": "shoptapaire",
+      "name": "Shop Ta Paire",
+      "legalName": null,
+      "type": "side-venture (informel)",
+      "country": "BE",
+      "currency": "EUR",
+      "timezone": "Europe/Brussels",
+      "activity": "resale sneakers",
+      "team": ["Azedine (Az)", "Yaya", "Bilel", "Souly", "Bilal (Billy)"],
+      "economics": { "achatMoyen": 26, "venteMoyenne": 50, "margeUnitaire": 24, "stockConnu": "≈30 paires (Asics, Saucony, On Cloud)" },
+      "tools": { "airtableBase": "appRvWC0OPKv4LmH6", "tables": ["STOCK", "PRÉCOMMANDES", "ARRIVAGES", "COMMANDES"] },
+      "kpis": ["stock", "précommandes", "marge réalisée", "rotation"],
+      "bank": "inconnu",
+      "channels": "inconnu"
+    }
+  ],
+
+  "social": {
+    "kameha": { "instagram": "inconnu (@handle à fournir)", "facebook": "inconnu", "tiktok": "inconnu", "googleBusiness": "inconnu", "whatsappBusiness": "inconnu", "quiPublie": "inconnu", "frequence": "inconnu" },
+    "campaigns": "inconnu (Reels Tracker actif côté analyse de contenu : 3 reels seedés)",
+    "periodesCommerciales": ["Ramadan", "à compléter"]
+  },
+
+  "emails": {
+    "parEntite": "inconnu (adresses recevant factures/relevés à lister)",
+    "connus": { "foodexCommandes": "commande@foodex.be", "seamar": "order@seamar.be", "fleetcor": "billingdocuments@fleetcor.eu" }
+  },
+
+  "alerts": {
+    "dailyCap": "inconnu",
+    "urgentRules": "inconnu — à définir (proposition en attente: irréversible + matériel + actionnable uniquement)",
+    "morningReport": "à confirmer"
+  },
+
+  "jarvis": {
+    "language": "FR",
+    "tone": "direct, sans politesse excessive, labels d'état (RÉDIGÉ/ENVOYÉ/CONFIRMÉ/EN ATTENTE)",
+    "regles": ["jamais inventer un chiffre", "donnée manquante = anomalie", "distinguer mesuré/estimé/hypothèse", "séparation des patrimoines sacrée"]
+  },
+
+  "donneesDisponibles": {
+    "immediat": ["journaux de caisse manuels (quotidiens)", "kameha_os.db (jumeau financier)", "Airtable Shop Ta Paire"],
+    "aFournir": ["export POS (format inconnu)", "relevés Fintro (CODA/CSV)", "relevés Revolut (CSV)", "balance comptable Brahim (XLSX)", "exports Takeaway.com"],
+    "echantillonsDemandes": "aucun reçu — colonnes exactes non déductibles pour l'instant"
+  }
+}

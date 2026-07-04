@@ -29,6 +29,9 @@ const NAV = [
   { href: "/equipe", label: "Équipe", icon: "☰" },
 ];
 
+/** Entités séparées du groupe (séparation des patrimoines : sacrée). */
+const NAV_ENTITIES = [{ href: "/shoptapaire", label: "Shop Ta Paire", icon: "◈" }];
+
 /* ------------------------------------------------------------------ */
 /* Contexte Jarvis : l'instantané de données sert le moteur d'intention */
 /* ------------------------------------------------------------------ */
@@ -276,7 +279,7 @@ export function Shell({
             <div>
               <div className="text-sm font-semibold leading-tight">{BUSINESS.name}</div>
               <div className="text-[10px] uppercase tracking-widest text-ink-3">
-                Jarvis · Enterprise OS
+                {BUSINESS.legalName} · Jarvis
               </div>
             </div>
           </div>
@@ -309,6 +312,32 @@ export function Shell({
                 </Link>
               );
             })}
+
+            <div className="px-3 pb-1 pt-4 text-[10px] uppercase tracking-widest text-ink-3">
+              Autres entités
+            </div>
+            {NAV_ENTITIES.map((item) => {
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${
+                    active
+                      ? "bg-jarvis/15 font-medium text-ink"
+                      : "text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className={`grid size-5 place-items-center text-xs ${active ? "text-jarvis" : "text-ink-3"}`}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="flex-1">{item.label}</span>
+                </Link>
+              );
+            })}
           </nav>
 
           <div className="mt-4 rounded-xl border border-hairline bg-surface-2 p-3 text-[11px] leading-relaxed text-ink-3">
@@ -326,7 +355,8 @@ export function Shell({
           <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-hairline bg-page/85 px-4 py-3 backdrop-blur md:px-8">
             <div className="min-w-0">
               <h1 className="truncate text-base font-semibold">
-                {NAV.find((n) => n.href === pathname)?.label ?? "Command center"}
+                {[...NAV, ...NAV_ENTITIES].find((n) => n.href === pathname)?.label ??
+                  "Command center"}
               </h1>
               <p className="text-xs text-ink-3">
                 {new Date().toLocaleDateString(BUSINESS.locale, {

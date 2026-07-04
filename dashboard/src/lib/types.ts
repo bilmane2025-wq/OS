@@ -50,7 +50,7 @@ export interface AttentionBudget {
   cap: number;
 }
 
-export type ChannelName = "Uber Eats" | "Deliveroo" | "Direct";
+export type ChannelName = "Site web" | "Takeaway.com" | "Comptoir";
 
 export interface ChannelDay {
   date: string; // ISO jour
@@ -124,10 +124,12 @@ export interface Automation {
 export interface TeamMember {
   id: string;
   name: string;
-  role: string;
-  hoursWeek: number;
-  ordersHandled: number;
-  onShift: boolean;
+  /** null = inconnu au profil — affiché « inconnu », jamais inventé. */
+  role: string | null;
+  hoursWeek: number | null;
+  ordersHandled: number | null;
+  onShift: boolean | null;
+  note?: string;
 }
 
 export interface SourceHealth {

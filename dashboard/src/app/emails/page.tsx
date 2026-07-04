@@ -98,17 +98,25 @@ export default function EmailsPage() {
             <SectionTitle title="Brouillons en attente" sub="Rédigés par Jarvis, envoyés par vous — l'envoi reste N5." />
             <ul className="space-y-3 text-xs">
               <li className="rounded-xl border border-hairline bg-surface-2 p-3">
-                <div className="font-medium text-ink">Réponse à l&apos;avis 3★ Google</div>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-ink">Relance Foodex — avoir 516,01 €</span>
+                  <span className="rounded-full border border-jarvis/40 bg-jarvis/10 px-2 py-0.5 text-[10px] text-jarvis">RÉDIGÉ</span>
+                </div>
                 <p className="mt-1 italic text-ink-3">
-                  « Merci pour votre retour — la rapidité du vendredi soir est notre chantier du
-                  moment. Revenez goûter le résultat, le couscous sera à l&apos;heure. »
+                  « Bonjour, l&apos;avoir de 516,01 € (compte C64478) n&apos;apparaît toujours pas
+                  sur nos relevés. Merci de confirmer sa date de crédit ou de nous transmettre la
+                  note de crédit correspondante. »
                 </p>
               </li>
               <li className="rounded-xl border border-hairline bg-surface-2 p-3">
-                <div className="font-medium text-ink">Relance comptable — balance en retard</div>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-ink">Fintro — activation du flux CODA</span>
+                  <span className="rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] text-warning">EN ATTENTE</span>
+                </div>
                 <p className="mt-1 italic text-ink-3">
-                  « Bonjour, la balance de juin n&apos;est pas encore arrivée dans notre système
-                  (attendue le 26/06). Pouvez-vous nous l&apos;envoyer ? »
+                  « Bonjour M. Van Herle, le mandat CodaClean sur BE69 1431 3360 5578 est signé.
+                  Pouvez-vous confirmer que le flux est actif ? Nous n&apos;avons encore rien
+                  reçu. »
                 </p>
               </li>
             </ul>

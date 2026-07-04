@@ -17,9 +17,9 @@ export default function RevenusPage() {
     new Date(isoDay).toLocaleDateString(BUSINESS.locale, { day: "numeric", month: "short" });
 
   const channels: Array<{ name: ChannelName; color: string }> = [
-    { name: "Direct", color: "var(--series-1)" },
-    { name: "Uber Eats", color: "var(--series-2)" },
-    { name: "Deliveroo", color: "var(--series-3)" },
+    { name: "Site web", color: "var(--series-1)" },
+    { name: "Comptoir", color: "var(--series-2)" },
+    { name: "Takeaway.com", color: "var(--series-3)" },
   ];
 
   const revenueSeries = channels.map((c) => ({
@@ -79,8 +79,8 @@ export default function RevenusPage() {
                 baselineLabel="seuil"
               />
               <p className="mt-2 text-xs text-ink-3">
-                Tendance baissière (−8,7 % sur 7 j). Jarvis surveille le rapprochement
-                encaissements ↔ ventes : un écart de 7,2 % est ouvert.
+                Revolut seul (dernière lecture manuelle) — le solde Fintro est inconnu tant que
+                le flux CODA n&apos;est pas confirmé actif. Seuil de 2 000 € provisoire, à définir.
               </p>
             </>
           )}
@@ -91,7 +91,7 @@ export default function RevenusPage() {
         <Card className="lg:col-span-2">
           <SectionTitle
             title="Répartition par canal — 7 jours"
-            sub="Le net déduit la commission plateforme ; le direct rapporte 100 % du ticket."
+            sub="Le net déduit la commission Takeaway.com (≈23,3 % estimé) ; site web et comptoir rapportent 100 % du ticket."
           />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -149,8 +149,10 @@ export default function RevenusPage() {
                     <ConfidenceBadge confidence={foodCost.confidence} />
                   </span>
                 </div>
-                <Meter value={foodCost.value ?? 0} target={0.28} max={0.5} color="var(--series-3)" targetLabel="cible 28 %" />
-                <p className="mt-1 text-[11px] text-ink-3">Cible 28 % — dépassée depuis 3 semaines.</p>
+                <Meter value={foodCost.value ?? 0} target={0.28} max={0.5} color="var(--series-3)" targetLabel="référence 28 %" />
+                <p className="mt-1 text-[11px] text-ink-3">
+                  32 % mesuré sur 267 j. Cible non définie au profil — 28 % = référence métier.
+                </p>
               </div>
             )}
             {commission && ca && (
@@ -167,7 +169,8 @@ export default function RevenusPage() {
                   color="var(--series-2)"
                 />
                 <p className="mt-1 text-[11px] text-ink-3">
-                  {fmtEur(commission.value)} prélevés cette semaine par les plateformes.
+                  {fmtEur(commission.value)} prélevés cette semaine par Takeaway.com (taux estimé, à
+                  confirmer sur le prochain relevé).
                 </p>
               </div>
             )}

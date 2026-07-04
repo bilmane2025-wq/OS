@@ -25,9 +25,9 @@ export default function InstantView() {
   const dayLabel = (isoDay: string) =>
     new Date(isoDay).toLocaleDateString(BUSINESS.locale, { day: "numeric", month: "short" });
   const series = [
-    { name: "Direct", color: "var(--series-1)" },
-    { name: "Deliveroo", color: "var(--series-3)" },
-    { name: "Uber Eats", color: "var(--series-2)" },
+    { name: "Comptoir", color: "var(--series-2)" },
+    { name: "Takeaway.com", color: "var(--series-3)" },
+    { name: "Site web", color: "var(--series-1)" },
   ].map((s) => ({
     ...s,
     values: labels.map(
@@ -55,13 +55,13 @@ export default function InstantView() {
         <Card className="lg:col-span-2">
           <SectionTitle
             title="Revenus par canal — 14 jours"
-            sub="Empilement par canal de vente ; le direct ne paie pas de commission."
+            sub="Caisse réelle du 29/06 au 01/07, reste calibré sur l'historique mesuré (670 €/j). Site web et comptoir : 0 % de commission."
             right={
               <Legend
                 items={[
-                  { name: "Direct", color: "var(--series-1)" },
-                  { name: "Deliveroo", color: "var(--series-3)" },
-                  { name: "Uber Eats", color: "var(--series-2)" },
+                  { name: "Site web", color: "var(--series-1)" },
+                  { name: "Takeaway.com", color: "var(--series-3)" },
+                  { name: "Comptoir", color: "var(--series-2)" },
                 ]}
               />
             }

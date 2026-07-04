@@ -1,11 +1,26 @@
 # Jarvis Command Center — dashboard Next.js
 
-Centre de commandement de l'entreprise, adossé aux concepts de l'Enterprise OS
-(le projet Python à la racine du dépôt) : les 8 KPI du MVP avec **nature +
-score de confiance** sur chaque chiffre, **alertes sous budget d'attention**
-(plafond 3, dédupliquées, jamais insistantes), **échelle d'autorité N0-N5**
-sur les automatisations, **watchdog des sources**, et un **Jarvis** vif et
-efficace pilotable au clavier (⌘K) comme à la voix.
+Centre de commandement du groupe de Bilal Kaddouri, adossé aux concepts de
+l'Enterprise OS (le projet Python à la racine du dépôt) : les 8 KPI du MVP
+avec **nature + score de confiance** sur chaque chiffre, **alertes sous
+budget d'attention** (plafond 3, dédupliquées, jamais insistantes),
+**échelle d'autorité N0-N5** sur les automatisations, **watchdog des
+sources**, et un **Jarvis** direct pilotable au clavier (⌘K) comme à la voix.
+
+## Entités (source : `src/data/business-profile.json`)
+
+- **Kameha Poke** (AYBI GROUP SRL, Wavre) — entité principale. Canaux réels :
+  Site web (~48 % du CA, 0 % commission) · Takeaway.com (~43,5 %, commission
+  ≈23,3 % estimée) · Comptoir. Historique mesuré 267 j : 178 987 € de CA,
+  ticket 45 €, food cost 32 %, iFood ≈48 % des achats.
+- **Shop Ta Paire** (`/shoptapaire`) — side-venture sneakers, patrimoine
+  strictement séparé. Marge unitaire 24 € (26 € → 50 €), ~30 paires,
+  Airtable `appRvWC0OPKv4LmH6` (connecteur inerte).
+
+Règles maison appliquées partout : jamais un chiffre inventé — les inconnues
+du profil s'affichent « inconnu », les valeurs simulées sont marquées
+« estimation », les anomalies réelles (avoir Foodex 516,01 €, écart caisse
++4 €, prime RC impayée, onboarding Uber bloqué…) alimentent les alertes.
 
 ## Lancer
 

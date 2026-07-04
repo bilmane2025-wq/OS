@@ -1,12 +1,16 @@
 /**
  * Moteur Jarvis — compréhension d'intention (FR) + personnalité.
  *
- * Tourne entièrement côté client sur l'instantané de données (zéro appel
- * externe, conforme à la Constitution de l'OS). Le branchement d'un vrai
- * LLM se fait dans app/api/jarvis/route.ts : même contrat JarvisReply.
+ * Ton (profil Bilal) : direct, sans politesse excessive, labels d'état
+ * [RÉDIGÉ / ENVOYÉ / CONFIRMÉ / EN ATTENTE]. Règles : jamais inventer un
+ * chiffre, donnée manquante = anomalie, distinguer mesuré/estimé/hypothèse.
+ *
+ * Tourne côté client sur l'instantané de données (zéro appel externe).
+ * Le branchement d'un vrai LLM se fait dans app/api/jarvis/route.ts.
  */
 import { BUSINESS } from "./config";
 import { fmtConfidence, fmtEur, fmtNum, fmtPct } from "./format";
+import { KAMEHA, OWNER, SHOP_TA_PAIRE } from "./profile";
 import type { AttentionBudget, JarvisReply, Kpi } from "./types";
 
 export interface JarvisContext {
@@ -15,25 +19,23 @@ export interface JarvisContext {
 }
 
 /* ---------------------------------------------------------------- */
-/* Personnalité : efficace d'abord, pique d'esprit ensuite.           */
+/* Personnalité : efficace d'abord, pique sèche ensuite.              */
 /* ---------------------------------------------------------------- */
 const QUIPS = [
-  "Pendant que vous lisiez ceci, j'ai recalculé deux KPI. De rien.",
-  "Je ne dors jamais. La boucle de synchro non plus. On s'entend bien.",
-  "Efficacité : 100 %. Modestie : en cours de calibration.",
-  "J'aurais bien pris un café, mais je carbure aux événements horodatés.",
-  "Notez que je n'invente jamais un chiffre. Contrairement à certains tableurs.",
+  "Pendant ce temps, l'avoir Foodex de 516,01 € prend l'humidité. Je dis ça.",
+  "Je ne dors jamais. Le flux CODA Fintro non plus — lui, il n'a jamais commencé.",
+  "Aucun chiffre inventé dans cette réponse. Politique de la maison.",
+  "Takeaway prend ≈23 %. Le site web prend 0 %. Faites le calcul, moi je l'ai déjà fait.",
 ];
 
 function quip(seed: number): string | undefined {
-  // Une pique une fois sur trois — l'attention du dirigeant est un budget.
   return seed % 3 === 0 ? QUIPS[seed % QUIPS.length] : undefined;
 }
 
 const GREETINGS = [
-  `À votre service, ${BUSINESS.operator}. Les huit KPI sont à jour et la boucle tourne.`,
-  `Présent. ${BUSINESS.name} est sous surveillance — que puis-je pour vous ?`,
-  "Oui ? J'écoutais déjà, évidemment.",
+  `${OWNER.callMe}. 7 anomalies ouvertes, 2 hautes. On commence par laquelle ?`,
+  `Présent. ${BUSINESS.name} sous surveillance — caisse, litiges, banque. Question ?`,
+  "Oui ? J'écoutais déjà.",
 ];
 
 /* ---------------------------------------------------------------- */
@@ -52,7 +54,7 @@ function kpiAnswer(ctx: JarvisContext, key: string, phrase: (k: Kpi) => string):
   const k = kpiByKey(ctx, key);
   if (!k || k.value === null) {
     return {
-      text: "Pas de donnée fiable sur ce point — et je ne vais certainement pas l'inventer. Déposez la source manquante dans l'inbox et je recalcule.",
+      text: "Pas de donnée fiable sur ce point — et je ne vais pas l'inventer. Donnée manquante = anomalie : la source est réclamée au watchdog.",
       navigateTo: "/alertes",
     };
   }
@@ -61,13 +63,14 @@ function kpiAnswer(ctx: JarvisContext, key: string, phrase: (k: Kpi) => string):
 
 const NAV_TARGETS: Array<{ patterns: RegExp; path: string; label: string }> = [
   { patterns: /instantan|accueil|home|vue.?10|cockpit/i, path: "/", label: "Vue instantanée" },
-  { patterns: /revenu|vente|chiffre|commande/i, path: "/revenus", label: "Revenus & ventes" },
+  { patterns: /revenu|vente|chiffre|commande|caisse/i, path: "/revenus", label: "Revenus & ventes" },
   { patterns: /mail|email|courriel|boite|boîte/i, path: "/emails", label: "Emails" },
   { patterns: /social|insta|tiktok|facebook|contenu|post/i, path: "/social", label: "Social & contenu" },
   { patterns: /campagne|marketing|pub|ads/i, path: "/campagnes", label: "Campagnes" },
   { patterns: /automat|tâche|tache|robot/i, path: "/automatisations", label: "Automatisations" },
-  { patterns: /alerte|anomalie|insight|probl/i, path: "/alertes", label: "Insights & alertes" },
+  { patterns: /alerte|anomalie|insight|probl|litige/i, path: "/alertes", label: "Insights & alertes" },
   { patterns: /équipe|equipe|staff|personnel/i, path: "/equipe", label: "Équipe" },
+  { patterns: /paire|sneaker|shop ta paire|stp/i, path: "/shoptapaire", label: "Shop Ta Paire" },
 ];
 
 const INTENTS: Intent[] = [
@@ -85,62 +88,118 @@ const INTENTS: Intent[] = [
       const worst = shown[0];
       return {
         text:
-          `Systèmes nominaux. ${total} sollicitation${total > 1 ? "s" : ""} en attente, ` +
-          `${shown.length} montrée${shown.length > 1 ? "s" : ""} sous budget d'attention` +
-          (suppressed ? ` (${suppressed} contenue${suppressed > 1 ? "s" : ""} — consultables, pas insistantes)` : "") +
-          `. La plus urgente : ${worst ? worst.message : "aucune, profitez-en"}`,
+          `${total} sollicitation${total > 1 ? "s" : ""} après dédup, ${shown.length} montrée${shown.length > 1 ? "s" : ""} sous budget` +
+          (suppressed ? ` (${suppressed} contenues, consultables)` : "") +
+          `. La plus urgente : ${worst ? worst.message : "aucune"}`,
         navigateTo: "/alertes",
         quip: quip(seed),
       };
     },
   },
   {
-    patterns: [/(chiffre d.affaires|\bca\b|revenu)/i],
-    handle: (ctx) =>
-      kpiAnswer(ctx, "ca", (k) => `Chiffre d'affaires des 7 derniers jours : ${fmtEur(k.value)}, ${fmtPct(k.delta, true)} vs semaine précédente`),
+    patterns: [/(caisse|journal de caisse|journaux)/i],
+    handle: () => {
+      const last = KAMEHA.caisseRecente[KAMEHA.caisseRecente.length - 1];
+      return {
+        text:
+          `Dernier journal saisi : ${last.date}, ${fmtEur(last.total, true)}. ` +
+          `Le 30/06 porte un écart OUVERT de +4,00 € (1 198,90 calculé vs 1 202,90 saisi). ` +
+          `Rien reçu depuis le 01/07 — la source quotidienne est en retard. [EN ATTENTE]`,
+        navigateTo: "/revenus",
+      };
+    },
   },
   {
-    patterns: [/(trésorerie|tresorerie|cash|banque|solde)/i],
+    patterns: [/(litige|foodex|avoir|dirk marchand)/i],
+    handle: () => ({
+      text:
+        "Deux litiges fournisseurs ouverts : Foodex — avoir de 516,01 € non crédité (compte C64478), relance [RÉDIGÉ], envoi N5 : vous. " +
+        "Dirk Marchand — surfacturation récurrente : contrôle ligne à ligne des 3 dernières factures recommandé avant paiement.",
+      navigateTo: "/alertes",
+    }),
+  },
+  {
+    patterns: [/(assurance|prime|maxel|rc exploitation)/i],
+    handle: () => ({
+      text:
+        "Prime RC Exploitation 163,71 € échue le 23/04, statut impayé à vérifier (courtier MAXEL, Yvan Krug). " +
+        "C'est irréversible + matériel si la couverture saute : priorité haute. [EN ATTENTE]",
+      navigateTo: "/alertes",
+    }),
+  },
+  {
+    patterns: [/(chiffre d.affaires|\bca\b|revenu)/i],
+    handle: (ctx) =>
+      kpiAnswer(ctx, "ca", (k) =>
+        `CA 7 derniers jours : ${fmtEur(k.value)} — 3 jours de caisse réelle, le reste calibré sur l'historique mesuré (670 €/j sur 267 j)`),
+  },
+  {
+    patterns: [/(trésorerie|tresorerie|cash|banque|solde|revolut|fintro)/i],
     handle: (ctx) =>
       kpiAnswer(ctx, "tresorerie", (k) =>
-        `Trésorerie : ${fmtEur(k.value)} — seuil d'alerte à ${fmtEur(BUSINESS.cashAlertThreshold)}. Tendance ${k.delta && k.delta < 0 ? "baissière, je surveille de près" : "stable"}`),
+        `Trésorerie connue : ${fmtEur(k.value)} — Revolut seul. Le solde Fintro est INCONNU tant que le flux CODA n'est pas confirmé actif avec Tom Van Herle`),
   },
   {
     patterns: [/(food ?cost|coût matière|cout matiere)/i],
     handle: (ctx) =>
       kpiAnswer(ctx, "food_cost", (k) =>
-        `Food cost : ${fmtPct(k.value)} — la cible est 28 %. ${k.value! > 0.28 ? `${BUSINESS.mainSupplier} et vos fiches techniques méritent une conversation ferme` : "Dans les clous"}`),
+        `Food cost mesuré sur l'historique : ${fmtPct(k.value)}. Cible non définie au profil — la référence métier est 28 %. iFood pèse ≈48 % de ce poste`),
   },
   {
-    patterns: [/(marge)/i],
-    handle: (ctx) => kpiAnswer(ctx, "marge", (k) => `Marge estimée sur 7 jours : ${fmtEur(k.value)}`),
+    patterns: [/(marge|bénéfice|benefice)/i],
+    handle: (ctx) =>
+      kpiAnswer(ctx, "marge", (k) =>
+        `Marge estimée sur 7 j : ${fmtEur(k.value)} — base 25 % de marge nette mesurée sur 267 jours (44 846 € de bénéfice / 178 987 € de CA)`),
   },
   {
     patterns: [/(ticket moyen|panier)/i],
-    handle: (ctx) => kpiAnswer(ctx, "ticket_moyen", (k) => `Ticket moyen : ${fmtEur(k.value, true)}`),
+    handle: (ctx) => kpiAnswer(ctx, "ticket_moyen", (k) => `Ticket moyen mesuré : ${fmtEur(k.value, true)}`),
   },
   {
     patterns: [/(commande)/i],
     handle: (ctx) =>
-      kpiAnswer(ctx, "commandes_jour", (k) => `${fmtNum(k.value)} commandes par jour en moyenne cette semaine`),
+      kpiAnswer(ctx, "commandes_jour", (k) =>
+        `${fmtNum(k.value)} commandes/jour cette semaine — l'historique mesuré est à ≈15/j (3 970 commandes sur 267 j, ~40 % de clients récurrents)`),
   },
   {
-    patterns: [/(commission)/i],
+    patterns: [/(commission|takeaway)/i],
     handle: (ctx) =>
       kpiAnswer(ctx, "commission", (k) =>
-        `Les plateformes ont prélevé ${fmtEur(k.value)} cette semaine. Le canal direct, lui, prélève zéro — je dis ça, je ne dis rien`),
+        `Commission Takeaway.com sur 7 j : ${fmtEur(k.value)} — taux ≈23,3 % estimé sur l'historique, à confirmer sur le prochain relevé (contact : Ruben Pécriaux). Le site web, lui, prélève zéro`),
   },
   {
-    patterns: [/(fournisseur|foodex|dépendance|dependance)/i],
+    patterns: [/(fournisseur|ifood|dépendance|dependance|seamar)/i],
     handle: (ctx) =>
       kpiAnswer(ctx, "dependance_fournisseur", (k) =>
-        `${fmtPct(k.value)} des achats chez ${BUSINESS.mainSupplier}. Un seul point de défaillance, ce n'est pas une stratégie d'approvisionnement, c'est un pari`),
+        `${fmtPct(k.value)} du food cost chez iFood (mesuré). Un seul point de défaillance sur les produits asiatiques — un second fournisseur sur le top 5 des références s'impose`),
+  },
+  {
+    patterns: [/(uber|deliveroo)/i],
+    handle: () => ({
+      text:
+        "Uber Eats : onboarding bloqué depuis 3+ mois, possiblement suspendu — relance à faire au +32 2 808 66 28 avec le BCE 1028.675.991. [EN ATTENTE] " +
+        "Deliveroo : statut inconnu, contact existant Samia Meddah.",
+      navigateTo: "/alertes",
+    }),
+  },
+  {
+    patterns: [/(paire|sneaker|shop ta paire|\bstp\b|stock)/i],
+    handle: () => {
+      const e = SHOP_TA_PAIRE.economics;
+      return {
+        text:
+          `Shop Ta Paire : ≈${e.stockConnu} paires en stock (${e.stockMarques}). ` +
+          `Marge unitaire ${fmtEur(e.margeUnitaire)} (achat ${fmtEur(e.achatMoyen)} → vente ${fmtEur(e.venteMoyenne)}). ` +
+          `Précommandes et rotation : dans l'Airtable, connecteur pas encore branché. Patrimoine séparé de Kameha — sacré.`,
+        navigateTo: "/shoptapaire",
+      };
+    },
   },
   {
     patterns: [/(alerte|anomalie|urgent|problème|probleme)/i],
     handle: (ctx, _q, seed) => {
       const { shown } = ctx.attention;
-      if (!shown.length) return { text: "Aucune alerte sous budget. Savourez, c'est rare.", quip: quip(seed) };
+      if (!shown.length) return { text: "Aucune alerte sous budget. Rare. Profitez.", quip: quip(seed) };
       return {
         text: shown.map((a, i) => `${i + 1}. [${a.severity}] ${a.message}`).join(" "),
         navigateTo: "/alertes",
@@ -148,16 +207,10 @@ const INTENTS: Intent[] = [
     },
   },
   {
-    patterns: [/(planifie|programme|poste|publie).*(post|reel|story|contenu|vidéo|video)/i, /(post|contenu).*(planifie|programme)/i],
-    handle: () => ({
-      text: "Brouillon créé dans le planificateur. Il attend votre approbation — la publication automatique est N4, et meta_api est encore inerte : posez le jeton META_GRAPH_TOKEN dans le coffre pour l'éveiller.",
-      navigateTo: "/social",
-    }),
-  },
-  {
     patterns: [/(mail|email|courriel)/i],
     handle: () => ({
-      text: "Deux emails demandent une action : la facture Foodex à déposer dans l'inbox, et le relevé Belfius que le watchdog réclame depuis trois jours.",
+      text:
+        "Trois emails attendent une action : relance Foodex [RÉDIGÉ], confirmation du flux CODA Fintro [EN ATTENTE], et le relevé Takeaway à importer pour confirmer le taux de commission.",
       navigateTo: "/emails",
     }),
   },
@@ -165,7 +218,7 @@ const INTENTS: Intent[] = [
     patterns: [/(aide|help|que sais|commandes disponibles|\?$)/i],
     handle: () => ({
       text:
-        "Demandez-moi un KPI (« le CA ? », « trésorerie »), l'état du système (« rapport »), les alertes, ou dites « va aux campagnes » pour naviguer. Le micro fonctionne aussi — je parle couramment le dirigeant pressé.",
+        "Demandez un KPI (« le CA ? », « trésorerie », « food cost »), l'état (« rapport »), « caisse », « litiges », « Shop Ta Paire », ou « va aux alertes » pour naviguer. Micro supporté.",
     }),
   },
 ];
@@ -175,7 +228,7 @@ const INTENTS: Intent[] = [
 /* ---------------------------------------------------------------- */
 export function ask(ctx: JarvisContext, raw: string): JarvisReply {
   const q = raw.trim();
-  if (!q) return { text: "Je suis bon, mais pas au point de répondre au silence." };
+  if (!q) return { text: "Le silence n'est pas une requête." };
 
   const seed = [...q].reduce((a, c) => a + c.charCodeAt(0), 0);
 
@@ -190,13 +243,13 @@ export function ask(ctx: JarvisContext, raw: string): JarvisReply {
 
   for (const intent of INTENTS) {
     if (intent.patterns.some((p) => p.test(q))) {
-      return intent.handle({ ...ctxSafe(ctx) }, q, seed);
+      return intent.handle(ctxSafe(ctx), q, seed);
     }
   }
 
   return {
     text:
-      "Pas encore dans mon répertoire. Reformulez, ou essayez « aide » — mon vocabulaire s'étend à chaque sprint, contrairement à ma patience pour les plateformes à 30 % de commission.",
+      "Pas dans mon répertoire. Reformulez ou tapez « aide ». Mon vocabulaire s'étend à chaque sprint — contrairement à la patience de Foodex sur les avoirs.",
   };
 }
 

@@ -1,14 +1,18 @@
 /**
- * Couche de données simulée — le contrat exact que rempliront les vrais
- * connecteurs (connectors_disabled/ de l'OS : uber_eats_api, deliveroo_api,
- * bank_api, accounting_api, meta_api). Chaque fonction est le point de
- * branchement d'une intégration réelle : même forme, mêmes garanties
- * (confiance sur chaque valeur, null plutôt qu'un zéro inventé).
+ * Couche de données — calibrée sur le PROFIL RÉEL (src/data/business-profile.json).
  *
- * Générateur seedé → chiffres stables entre rendus (pas d'hydratation
- * divergente), cohérents entre eux (CA = somme des canaux, etc.).
+ * Trois natures de valeurs, jamais mélangées :
+ *  - "fait"       : mesuré (jumeau kameha_os.db 267 j, journaux de caisse) ;
+ *  - "estimation" : calculé depuis l'historique, à confirmer ;
+ *  - inconnu      : null / listes vides — affiché comme tel, JAMAIS inventé.
+ *
+ * Les jours sans journal de caisse sont simulés à partir des moyennes
+ * historiques mesurées (670 €/j, split canaux 48/43,5/8,5) et portent une
+ * confiance d'estimation. Les jours connus (29/06 → 01/07) utilisent les
+ * montants réels saisis.
  */
 import { BUSINESS } from "../config";
+import { KAMEHA } from "../profile";
 import type {
   Alert,
   AttentionBudget,
@@ -40,7 +44,6 @@ function mulberry32(seed: number) {
 
 const DAY_MS = 86_400_000;
 
-/** Ancre temporelle : minuit du jour courant (stable pendant un rendu). */
 function today(): number {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -56,35 +59,45 @@ function isoDay(ts: number): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* Ventes par canal — 14 jours (Uber Eats / Deliveroo / Direct).        */
+/* Ventes par canal — mesuré quand connu, sinon simulé sur l'historique */
 /* ------------------------------------------------------------------ */
-const CHANNELS: ChannelName[] = ["Uber Eats", "Deliveroo", "Direct"];
-// Poids de chaque canal et taux de commission plateforme (~30 %).
-const CHANNEL_PROFILE: Record<ChannelName, { base: number; commission: number }> = {
-  "Uber Eats": { base: 520, commission: 0.3 },
-  Deliveroo: { base: 380, commission: 0.29 },
-  Direct: { base: 260, commission: 0 },
+const CHANNELS: ChannelName[] = ["Site web", "Takeaway.com", "Comptoir"];
+
+/** CA moyen/jour mesuré (178 987 € / 267 j) réparti par canal historique. */
+const DAILY_TOTAL = KAMEHA.historique.ca / KAMEHA.historique.days; // ≈ 670 €
+const COMMISSION_RATE: Record<ChannelName, number> = {
+  "Site web": 0,
+  "Takeaway.com": KAMEHA.takeawayCommissionRate, // ≈ 23,3 % (estimé)
+  Comptoir: 0,
 };
 
+/** Journaux de caisse réels (totaux jour, saisis manuellement). */
+const CAISSE_REELLE: Record<string, number> = Object.fromEntries(
+  KAMEHA.caisseRecente.map((c) => [c.date, c.total]),
+);
+
 export function getChannelDays(days = 14): ChannelDay[] {
-  const rng = mulberry32(20260703);
+  const rng = mulberry32(20260704);
   const t0 = today() - (days - 1) * DAY_MS;
   const rows: ChannelDay[] = [];
   for (let i = 0; i < days; i++) {
     const ts = t0 + i * DAY_MS;
+    const day = isoDay(ts);
     const weekday = new Date(ts).getDay();
-    // Vendredi/samedi/dimanche : pics de commandes (métier livraison).
-    const dayBoost = weekday === 5 || weekday === 6 ? 1.45 : weekday === 0 ? 1.2 : 1;
+    // Pics week-end simulés (peakDays inconnu au profil — hypothèse métier).
+    const dayBoost = weekday === 5 || weekday === 6 ? 1.35 : weekday === 0 ? 1.15 : 0.92;
+    const simulatedTotal = DAILY_TOTAL * dayBoost * (0.85 + rng() * 0.3);
+    // Jour connu : le total réel de caisse remplace la simulation.
+    const total = CAISSE_REELLE[day] ?? simulatedTotal;
     for (const channel of CHANNELS) {
-      const { base, commission } = CHANNEL_PROFILE[channel];
-      const revenue = Math.round(base * dayBoost * (0.82 + rng() * 0.4));
-      const ticket = 21 + rng() * 8; // ticket moyen ~21-29 €
+      const share = KAMEHA.channelSplit[channel];
+      const revenue = Math.round(total * share * 100) / 100;
       rows.push({
-        date: isoDay(ts),
+        date: day,
         channel,
         revenue,
-        orders: Math.max(1, Math.round(revenue / ticket)),
-        commission: Math.round(revenue * commission),
+        orders: Math.max(1, Math.round(revenue / KAMEHA.historique.ticketMoyen)),
+        commission: Math.round(revenue * COMMISSION_RATE[channel] * 100) / 100,
       });
     }
   }
@@ -92,7 +105,7 @@ export function getChannelDays(days = 14): ChannelDay[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Les 8 KPI du MVP (catalogue calc/kpi_catalog.py).                    */
+/* Les 8 KPI — natures et scores fidèles au profil.                     */
 /* ------------------------------------------------------------------ */
 export function getKpis(): Kpi[] {
   const rows = getChannelDays();
@@ -106,21 +119,15 @@ export function getKpis(): Kpi[] {
   }
   const dayKeys = [...byDay.keys()].sort();
   const daily = dayKeys.map((k) => byDay.get(k)!);
-  const revHistory = daily.map((d) => d.revenue);
+  const revHistory = daily.map((d) => Math.round(d.revenue));
 
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   const last7 = daily.slice(-7);
   const prev7 = daily.slice(0, 7);
-  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-  const ca7 = sum(last7.map((d) => d.revenue));
+  const ca7 = Math.round(sum(last7.map((d) => d.revenue)));
   const caPrev7 = sum(prev7.map((d) => d.revenue));
   const orders7 = sum(last7.map((d) => d.orders));
-  const commission7 = sum(last7.map((d) => d.commission));
-
-  const rng = mulberry32(42);
-  const foodCost = 0.312; // achats Foodex / CA — au-dessus de la cible 28 %
-  const couts7 = Math.round(ca7 * foodCost);
-  const marge7 = ca7 - couts7 - commission7;
-  const treso = 4870; // au-dessus du seuil de 2 000 €, mais en baisse
+  const commission7 = Math.round(sum(last7.map((d) => d.commission)));
   const now = iso(Date.now());
 
   const mk = (
@@ -130,43 +137,51 @@ export function getKpis(): Kpi[] {
     unit: Kpi["unit"],
     history: number[],
     delta: number | null,
-    nature: Kpi["confidence"]["nature"] = "fait",
-    score = 0.92 + rng() * 0.07,
+    nature: Kpi["confidence"]["nature"],
+    score: number,
   ): Kpi => ({
     key,
     label,
     value,
     unit,
-    confidence: { nature, score: Math.round(score * 100) / 100 },
+    confidence: { nature, score },
     delta,
     history,
     ruleVersion: 1,
     computedAt: now,
   });
 
+  const h = KAMEHA.historique;
+
   return [
-    mk("ca", "Chiffre d'affaires (7 j)", ca7, "EUR", revHistory, ca7 / caPrev7 - 1),
-    mk("marge", "Marge (7 j)", marge7, "EUR",
-      daily.map((d) => Math.round(d.revenue * (1 - foodCost) - d.commission)),
-      0.041, "estimation", 0.83),
-    mk("food_cost", "Food cost", foodCost, "ratio",
-      revHistory.map((_, i) => 0.29 + 0.03 * (i / revHistory.length) + (mulberry32(i)() - 0.5) * 0.01),
-      0.028, "estimation", 0.78),
-    mk("ticket_moyen", "Ticket moyen", ca7 / orders7, "EUR",
-      daily.map((d) => d.revenue / Math.max(1, d.orders)), 0.012),
-    mk("commandes_jour", "Commandes / jour", orders7 / 7, "commandes/jour",
-      daily.map((d) => d.orders), (orders7 / 7) / (sum(prev7.map((d) => d.orders)) / 7) - 1),
-    mk("tresorerie", "Trésorerie", treso, "EUR",
-      revHistory.map((_, i) => 6400 - i * 118 + (mulberry32(i * 7)() - 0.5) * 300), -0.087),
-    mk("commission", "Commissions plateformes (7 j)", commission7, "EUR",
-      daily.map((d) => d.commission), 0.056),
-    mk("dependance_fournisseur", `Dépendance ${BUSINESS.mainSupplier}`, 0.63, "ratio",
-      revHistory.map((_, i) => 0.58 + 0.05 * (i / revHistory.length)), 0.032, "fait", 0.95),
+    // CA 7 j : mélange caisse réelle (3 j) + simulation calibrée → estimation.
+    mk("ca", "Chiffre d'affaires (7 j)", ca7, "EUR", revHistory, ca7 / caPrev7 - 1, "estimation", 0.75),
+    // Marge : bénéfice historique ≈ 25 % du CA (mesuré sur 267 j).
+    mk("marge", "Marge (7 j, base 25 % hist.)", Math.round(ca7 * h.margeNettePct), "EUR",
+      revHistory.map((r) => Math.round(r * h.margeNettePct)), null, "estimation", 0.7),
+    // Food cost : ≈32 % mesuré sur l'historique complet.
+    mk("food_cost", "Food cost (mesuré 267 j)", h.foodCostPct, "ratio",
+      revHistory.map(() => h.foodCostPct), null, "fait", 0.86),
+    // Ticket moyen : 45 € mesuré.
+    mk("ticket_moyen", "Ticket moyen (mesuré)", h.ticketMoyen, "EUR",
+      daily.map((d) => d.revenue / Math.max(1, d.orders)), null, "fait", 0.9),
+    // Dérivé du CA ÷ ticket moyen (pas un comptage) → estimation.
+    mk("commandes_jour", "Commandes / jour (dérivé)", orders7 / 7, "commandes/jour",
+      daily.map((d) => d.orders), null, "estimation", 0.7),
+    // Trésorerie : Revolut seul connu (≈9 169 €) — solde Fintro INCONNU.
+    mk("tresorerie", "Trésorerie (Revolut seul)", KAMEHA.soldeRevolut, "EUR",
+      revHistory.map(() => KAMEHA.soldeRevolut), null, "estimation", 0.5),
+    // Commission : Takeaway.com uniquement, taux ≈23,3 % estimé à confirmer.
+    mk("commission", "Commission Takeaway (7 j)", commission7, "EUR",
+      daily.map((d) => Math.round(d.commission)), null, "estimation", 0.72),
+    // Dépendance fournisseur : iFood ≈48 % du food cost, mesuré.
+    mk("dependance_fournisseur", "Dépendance iFood", h.ifoodSharePct, "ratio",
+      revHistory.map(() => h.ifoodSharePct), null, "fait", 0.85),
   ];
 }
 
 /* ------------------------------------------------------------------ */
-/* Alertes proactives + budget d'attention (experience/attention.py).   */
+/* Alertes RÉELLES (anomalies ouvertes du profil) + budget d'attention. */
 /* ------------------------------------------------------------------ */
 const SEVERITY_RANK: Record<Alert["severity"], number> = {
   haute: 0,
@@ -179,61 +194,79 @@ export function getAlerts(): Alert[] {
   return [
     {
       id: "AN-001",
-      type: "reconciliation/ecart-encaissement-vente",
+      type: "assurance/prime-impayee",
       severity: "haute",
       message:
-        "Écart de 7,2 % entre encaissements bancaires et ventes déclarées sur les 7 derniers jours (seuil : 5 %).",
+        "Prime RC Exploitation 163,71 € impayée, échue le 23/04 (courtier MAXEL, Yvan Krug) — risque de rupture de couverture.",
       recommendation:
-        "Vérifier les encaissements manquants ou les ventes non déclarées sur la période.",
-      probability: 0.86,
-      impact: 640,
-      refs: ["ca", "tresorerie"],
-      createdAt: iso(t - 2 * 3600_000),
+        "Vérifier si le paiement est parti ; sinon payer aujourd'hui et demander confirmation écrite de maintien de couverture. [EN ATTENTE]",
+      impact: 163.71,
+      refs: ["assurances"],
+      createdAt: iso(t - 72 * 86_400_000 / 24),
       state: "ouverte",
     },
     {
       id: "AN-002",
-      type: "seuil/food_cost",
-      severity: "moyenne",
-      message: "Food cost à 31,2 % — au-dessus de la cible de 28 % pour la 3e semaine.",
+      type: "litige/foodex-avoir",
+      severity: "haute",
+      message: "Avoir Foodex de 516,01 € ouvert (compte C64478) — toujours non crédité.",
       recommendation:
-        `Renégocier les prix ${BUSINESS.mainSupplier} ou ajuster les fiches techniques des 3 plats les plus vendus.`,
-      probability: 0.92,
-      impact: 410,
-      refs: ["food_cost"],
-      createdAt: iso(t - 26 * 3600_000),
+        "Relancer commande@foodex.be avec la référence de l'avoir ; joindre la facture concernée. Brouillon prêt. [RÉDIGÉ]",
+      impact: 516.01,
+      refs: ["food_cost", "tresorerie"],
+      createdAt: iso(t - 6 * 86_400_000),
       state: "ouverte",
     },
     {
       id: "AN-003",
-      type: "seuil/dependance_fournisseur",
+      type: "caisse/ecart",
       severity: "moyenne",
-      message: `63 % des achats concentrés chez ${BUSINESS.mainSupplier} — risque de rupture unique.`,
-      recommendation: "Identifier un second fournisseur pour les 5 références les plus achetées.",
-      probability: 0.7,
-      impact: 900,
-      refs: ["dependance_fournisseur"],
-      createdAt: iso(t - 50 * 3600_000),
+      message: "Écart de caisse +4,00 € le 30/06 : 1 198,90 € calculé vs 1 202,90 € saisi.",
+      recommendation: "Recompter le journal du 30/06 avec Aymane ; corriger la saisie ou justifier l'écart.",
+      impact: 4,
+      refs: ["ca"],
+      createdAt: iso(t - 4 * 86_400_000),
       state: "ouverte",
     },
     {
       id: "AN-004",
-      type: "watchdog/source-en-retard",
-      severity: "douce",
-      message: "La balance comptable n'a pas été déposée depuis 12 jours (attendue tous les 7 jours).",
-      recommendation: "Relancer le comptable ou déposer l'export XLSX dans l'inbox.",
-      refs: ["balance-comptable"],
-      createdAt: iso(t - 12 * 3600_000),
+      type: "fournisseur/dependance-ifood",
+      severity: "moyenne",
+      message: "≈48 % du food cost concentré chez iFood (mesuré sur l'historique) — point de défaillance unique.",
+      recommendation: "Identifier un second fournisseur pour les 5 références asiatiques les plus achetées.",
+      refs: ["dependance_fournisseur"],
+      createdAt: iso(t - 10 * 86_400_000),
       state: "ouverte",
     },
     {
       id: "AN-005",
-      type: "watchdog/source-en-retard",
+      type: "plateforme/uber-onboarding",
+      severity: "moyenne",
+      message: "Onboarding Uber Eats bloqué depuis 3+ mois (possiblement suspendu) — canal de croissance fermé.",
+      recommendation:
+        "Relancer restaurants.belgium@uber.com / +32 2 808 66 28 avec le n° BCE 1028.675.991. [EN ATTENTE]",
+      refs: ["ca"],
+      createdAt: iso(t - 20 * 86_400_000),
+      state: "ouverte",
+    },
+    {
+      id: "AN-006",
+      type: "regle/fdc-non-confirmee",
       severity: "douce",
-      message: "Relevé bancaire attendu depuis 3 jours.",
-      recommendation: "Déposer l'export CSV Belfius dans l'inbox.",
-      refs: ["banque-releve"],
-      createdAt: iso(t - 3 * 3600_000),
+      message: "Signification de la colonne « Fdc » du journal de caisse non confirmée (17,60 € / 24,20 € observés).",
+      recommendation: "Confirmer avec Aymane ce que « Fdc » désigne (fond de caisse ?) — la règle de parsing attend.",
+      refs: ["ca"],
+      createdAt: iso(t - 3 * 86_400_000),
+      state: "ouverte",
+    },
+    {
+      id: "AN-007",
+      type: "fournisseur/dirk-marchand-surfacturation",
+      severity: "douce",
+      message: "Litige surfacturation récurrent avec Dirk Marchand (fruits & légumes).",
+      recommendation: "Contrôler ligne à ligne les 3 dernières factures avant le prochain règlement.",
+      refs: ["food_cost"],
+      createdAt: iso(t - 8 * 86_400_000),
       state: "ouverte",
     },
   ];
@@ -265,72 +298,72 @@ export function getAttention(cap = BUSINESS.attentionCap): AttentionBudget {
 }
 
 /* ------------------------------------------------------------------ */
-/* Emails — triage type Gmail (perception/parsers/email_parser).        */
+/* Emails — correspondants réels du profil, statuts Jarvis.             */
 /* ------------------------------------------------------------------ */
 export function getEmails(): EmailThread[] {
   const t = Date.now();
   return [
     {
       id: "EM-01",
-      from: `Facturation ${BUSINESS.mainSupplier}`,
-      subject: `Facture ${BUSINESS.mainSupplier} n° 2026-1187 — 1 284,50 €`,
-      snippet: "Veuillez trouver ci-joint votre facture du mois. Échéance au 15/07…",
-      receivedAt: iso(t - 40 * 60_000),
+      from: "Foodex (commande@foodex.be)",
+      subject: "Avoir 516,01 € — compte C64478",
+      snippet: "Relance concernant l'avoir toujours non crédité sur votre compte…",
+      receivedAt: iso(t - 2 * 3600_000),
       category: "fournisseur",
       needsAction: true,
-      suggestedAction: "Déposer le PDF dans l'inbox OS → extraction + KPI food cost",
+      suggestedAction: "Relance [RÉDIGÉ] — envoi N5 : vous. Rappel : commande avant 16 h pour J+1.",
       unread: true,
     },
     {
       id: "EM-02",
-      from: "Uber Eats Restaurants",
-      subject: "Votre relevé hebdomadaire est disponible",
-      snippet: "Résumé de la semaine : 214 commandes, 4 abandons, note moyenne 4,6…",
-      receivedAt: iso(t - 3 * 3600_000),
+      from: "Takeaway.com (Ruben Pécriaux)",
+      subject: "Relevé hebdomadaire partenaire",
+      snippet: "Votre relevé de commandes et commissions de la semaine est disponible…",
+      receivedAt: iso(t - 5 * 3600_000),
       category: "plateforme",
       needsAction: true,
-      suggestedAction: "Importer le CSV commandes → rapprochement encaissements",
+      suggestedAction: "Importer l'export → confirmer le taux de commission réel (≈23,3 % estimé).",
       unread: true,
     },
     {
       id: "EM-03",
-      from: "Deliveroo Partenaires",
-      subject: "Action requise : photos du menu à mettre à jour",
-      snippet: "Les menus avec photos récentes convertissent 24 % mieux…",
-      receivedAt: iso(t - 7 * 3600_000),
-      category: "plateforme",
+      from: "Fintro (Tom Van Herle)",
+      subject: "Mandat CodaClean — BE69 1431 3360 5578",
+      snippet: "Suite à la signature du mandat, voici les étapes d'activation du flux CODA…",
+      receivedAt: iso(t - 26 * 3600_000),
+      category: "banque",
       needsAction: true,
-      suggestedAction: "Planifier une séance photo — lier à la campagne « Menu été »",
+      suggestedAction: "Confirmer que le bank-feed CODA est actif — le watchdog n'a encore rien reçu. [EN ATTENTE]",
       unread: false,
     },
     {
       id: "EM-04",
-      from: "Belfius Direct",
-      subject: "Votre relevé de compte est disponible",
-      snippet: "Le relevé n° 2026-27 de votre compte professionnel est prêt…",
-      receivedAt: iso(t - 26 * 3600_000),
-      category: "banque",
+      from: "Brahim (comptable)",
+      subject: "Accès ClearFacts / clôture Q1 2026",
+      snippet: "L'accès ClearFacts est en cours de configuration ; il me manque encore…",
+      receivedAt: iso(t - 30 * 3600_000),
+      category: "admin",
       needsAction: true,
-      suggestedAction: "Exporter le CSV → inbox OS (le watchdog l'attend depuis 3 j)",
+      suggestedAction: "Demander la fréquence de remise de la balance (inconnue au profil).",
       unread: false,
     },
     {
       id: "EM-05",
-      from: "Google Business",
-      subject: "3 nouveaux avis sur votre fiche",
-      snippet: "« Meilleur couscous du quartier, livraison rapide… » — 2 × 5★, 1 × 3★",
-      receivedAt: iso(t - 30 * 3600_000),
-      category: "client",
+      from: "Uber Eats (restaurants.belgium@uber.com)",
+      subject: "Dossier d'onboarding — statut",
+      snippet: "Votre dossier est en cours d'examen…  (dernier message reçu il y a plus de 3 mois)",
+      receivedAt: iso(t - 24 * 86_400_000),
+      category: "plateforme",
       needsAction: true,
-      suggestedAction: "Répondre au 3★ (Jarvis peut proposer un brouillon)",
+      suggestedAction: "Relance téléphonique +32 2 808 66 28 avec BCE 1028.675.991. [EN ATTENTE]",
       unread: false,
     },
     {
       id: "EM-06",
-      from: "SPF Finances",
-      subject: "Rappel : déclaration TVA T2",
-      snippet: "Votre déclaration TVA du deuxième trimestre est attendue avant le 20/07…",
-      receivedAt: iso(t - 2 * 86_400_000),
+      from: "Fleetcor (billingdocuments@fleetcor.eu)",
+      subject: "Document de facturation disponible",
+      snippet: "Votre document de facturation mensuel est prêt au téléchargement…",
+      receivedAt: iso(t - 3 * 86_400_000),
       category: "admin",
       needsAction: false,
       unread: false,
@@ -339,165 +372,43 @@ export function getEmails(): EmailThread[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Social — analytics + planificateur (meta_api inerte).                */
+/* Social — INCONNU au profil : aucun chiffre inventé.                  */
 /* ------------------------------------------------------------------ */
 export function getSocialStats(): SocialStat[] {
-  return [
-    {
-      platform: "Instagram",
-      followers: 3840,
-      followersDelta: 0.034,
-      engagementRate: 0.047,
-      reach7d: 12400,
-      topPost: "Reel « coulisses du service du vendredi » — 8,2 k vues",
-    },
-    {
-      platform: "Facebook",
-      followers: 2210,
-      followersDelta: 0.008,
-      engagementRate: 0.021,
-      reach7d: 5400,
-      topPost: "Promo midi -20 % — 340 interactions",
-    },
-    {
-      platform: "TikTok",
-      followers: 1490,
-      followersDelta: 0.112,
-      engagementRate: 0.083,
-      reach7d: 21800,
-      topPost: "« Le dressage du tajine en 15 s » — 18 k vues",
-    },
-    {
-      platform: "Google Business",
-      followers: 0,
-      followersDelta: 0,
-      engagementRate: 0,
-      reach7d: 3100,
-      topPost: "Note moyenne 4,6★ (128 avis) — +3 avis cette semaine",
-    },
-  ];
+  // Handles et accès non fournis (section 4 du profil en attente).
+  return [];
 }
 
 export function getScheduledPosts(): ScheduledPost[] {
-  const t0 = today();
-  return [
-    {
-      id: "PST-01",
-      platform: "Instagram",
-      title: "Reel : nouveau plat de la semaine",
-      scheduledFor: iso(t0 + 1 * DAY_MS + 11 * 3600_000),
-      status: "planifié",
-      mediaType: "vidéo",
-    },
-    {
-      id: "PST-02",
-      platform: "TikTok",
-      title: "Coulisses : préparation du couscous du vendredi",
-      scheduledFor: iso(t0 + 2 * DAY_MS + 17 * 3600_000),
-      status: "planifié",
-      mediaType: "vidéo",
-    },
-    {
-      id: "PST-03",
-      platform: "Facebook",
-      title: "Promo midi : -20 % sur les formules cette semaine",
-      scheduledFor: iso(t0 + 3 * DAY_MS + 10 * 3600_000),
-      status: "brouillon",
-      mediaType: "photo",
-    },
-    {
-      id: "PST-04",
-      platform: "Google Business",
-      title: "Réponse aux 3 nouveaux avis (brouillon Jarvis prêt)",
-      scheduledFor: iso(t0 + 1 * DAY_MS + 9 * 3600_000),
-      status: "brouillon",
-      mediaType: "avis",
-    },
-    {
-      id: "PST-05",
-      platform: "Instagram",
-      title: "Story : sondage « votre plat préféré de l'été ? »",
-      scheduledFor: iso(t0 - 1 * DAY_MS + 12 * 3600_000),
-      status: "publié",
-      mediaType: "story",
-    },
-  ];
+  // Aucun planificateur branché — seul le Reels Tracker (3 reels seedés)
+  // existe côté analyse de contenu.
+  return [];
 }
 
 /* ------------------------------------------------------------------ */
-/* Campagnes marketing.                                                 */
+/* Campagnes — INCONNU au profil : rien d'inventé.                      */
 /* ------------------------------------------------------------------ */
 export function getCampaigns(): Campaign[] {
-  const t0 = today();
-  return [
-    {
-      id: "CMP-01",
-      name: "Menu été — lancement",
-      channel: "Meta Ads (IG + FB)",
-      status: "active",
-      budget: 450,
-      spent: 287,
-      revenueAttributed: 1240,
-      orders: 52,
-      startedAt: iso(t0 - 12 * DAY_MS),
-      endsAt: iso(t0 + 9 * DAY_MS),
-    },
-    {
-      id: "CMP-02",
-      name: "Boost visibilité Uber Eats",
-      channel: "Uber Eats Ads",
-      status: "active",
-      budget: 300,
-      spent: 246,
-      revenueAttributed: 830,
-      orders: 34,
-      startedAt: iso(t0 - 8 * DAY_MS),
-      endsAt: iso(t0 + 6 * DAY_MS),
-    },
-    {
-      id: "CMP-03",
-      name: "Offre -20 % midi semaine",
-      channel: "Deliveroo Promo",
-      status: "en pause",
-      budget: 200,
-      spent: 118,
-      revenueAttributed: 390,
-      orders: 21,
-      startedAt: iso(t0 - 20 * DAY_MS),
-      endsAt: null,
-    },
-    {
-      id: "CMP-04",
-      name: "Ramadan — paniers famille",
-      channel: "Meta Ads + WhatsApp",
-      status: "terminée",
-      budget: 600,
-      spent: 600,
-      revenueAttributed: 3120,
-      orders: 96,
-      startedAt: iso(t0 - 120 * DAY_MS),
-      endsAt: iso(t0 - 90 * DAY_MS),
-    },
-  ];
+  return [];
 }
 
 /* ------------------------------------------------------------------ */
-/* Automatisations — échelle d'autorité N0-N5 (governance/permissions). */
+/* Automatisations — échelle N0-N5, état réel des chantiers.            */
 /* ------------------------------------------------------------------ */
 export function getAutomations(): Automation[] {
   const t = Date.now();
   return [
     {
       id: "AUT-01",
-      name: "Ingestion inbox → événements",
+      name: "Ingestion journaux de caisse",
       description:
-        "Poll de l'inbox, parsing CSV/XLSX/PDF/email, dédup, quarantaine — la boucle vivante de l'OS.",
+        "Saisie manuelle Tkw / Rev(carte) / Cash / Total / Fdc → événements. La colonne « Fdc » attend confirmation avant parsing complet.",
       authority: 2,
       requiresHuman: false,
       enabled: true,
-      lastRun: iso(t - 4 * 60_000),
-      runsThisWeek: 2016,
-      status: "ok",
+      lastRun: iso(t - 3 * 86_400_000),
+      runsThisWeek: 3,
+      status: "attention",
     },
     {
       id: "AUT-02",
@@ -506,44 +417,45 @@ export function getAutomations(): Automation[] {
       authority: 2,
       requiresHuman: false,
       enabled: true,
-      lastRun: iso(t - 4 * 60_000),
-      runsThisWeek: 391,
+      lastRun: iso(t - 3 * 86_400_000),
+      runsThisWeek: 12,
       status: "ok",
     },
     {
       id: "AUT-03",
-      name: "Rapprochement encaissements ↔ ventes",
-      description: "Écart > 5 % ⇒ anomalie avec gravité, probabilité, impact et recommandation.",
+      name: "Rapprochement caisse ↔ banque",
+      description:
+        "Attend le flux CODA Fintro (mandat CodaClean signé, activation à confirmer) — inerte sans relevés.",
       authority: 3,
       requiresHuman: false,
-      enabled: true,
-      lastRun: iso(t - 2 * 3600_000),
-      runsThisWeek: 7,
-      status: "attention",
+      enabled: false,
+      lastRun: null,
+      runsThisWeek: 0,
+      status: "inerte",
     },
     {
       id: "AUT-04",
       name: "Relance fournisseur (brouillon email)",
       description:
-        "Prépare un brouillon de relance quand une facture attendue manque — l'envoi reste humain.",
+        "Brouillon de relance Foodex (avoir 516,01 €) prêt [RÉDIGÉ] — l'envoi reste humain (N5).",
       authority: 3,
       requiresHuman: true,
       enabled: true,
-      lastRun: iso(t - 3 * 86_400_000),
-      runsThisWeek: 2,
+      lastRun: iso(t - 2 * 3600_000),
+      runsThisWeek: 1,
       status: "ok",
     },
     {
       id: "AUT-05",
-      name: "Publication sociale planifiée",
+      name: "Suivi litiges fournisseurs",
       description:
-        "Publie les contenus approuvés à l'heure prévue (meta_api inerte : approbation humaine requise).",
-      authority: 4,
+        "Foodex (avoir 516,01 €) + Dirk Marchand (surfacturation récurrente) : relances et contrôle facture.",
+      authority: 3,
       requiresHuman: true,
-      enabled: false,
-      lastRun: null,
-      runsThisWeek: 0,
-      status: "inerte",
+      enabled: true,
+      lastRun: iso(t - 6 * 86_400_000),
+      runsThisWeek: 2,
+      status: "attention",
     },
     {
       id: "AUT-06",
@@ -561,43 +473,69 @@ export function getAutomations(): Automation[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Équipe.                                                              */
+/* Équipe — profil réel, inconnues affichées comme telles.              */
 /* ------------------------------------------------------------------ */
 export function getTeam(): TeamMember[] {
   return [
-    { id: "TM-01", name: "Yassine", role: "Cuisine", hoursWeek: 42, ordersHandled: 388, onShift: true },
-    { id: "TM-02", name: "Sarah", role: "Cuisine", hoursWeek: 35, ordersHandled: 301, onShift: true },
-    { id: "TM-03", name: "Mehdi", role: "Comptoir / packaging", hoursWeek: 28, ordersHandled: 512, onShift: false },
-    { id: "TM-04", name: "Lina", role: "Comptoir / packaging", hoursWeek: 22, ordersHandled: 344, onShift: true },
+    {
+      id: "TM-01",
+      name: "Aymane Bonouh",
+      role: "Cogérant",
+      hoursWeek: null,
+      ordersHandled: null,
+      onShift: null,
+    },
+    {
+      id: "TM-02",
+      name: "Sacha Debast",
+      role: null,
+      hoursWeek: null,
+      ordersHandled: null,
+      onShift: null,
+      note: "Contrat Article 61 (CPAS Wavre)",
+    },
   ];
 }
 
 /* ------------------------------------------------------------------ */
-/* Fraîcheur des sources (watchdog M33).                                */
+/* Fraîcheur des sources (watchdog M33) — état réel.                    */
 /* ------------------------------------------------------------------ */
 export function getSources(): SourceHealth[] {
-  const t = Date.now();
   return [
     {
-      sourceId: "plateforme-commandes",
-      label: "Exports commandes (Uber Eats / Deliveroo)",
+      sourceId: "journaux-caisse",
+      label: "Journaux de caisse (saisie manuelle quotidienne)",
       expectedEveryDays: 1,
-      lastSeen: iso(t - 10 * 3600_000),
-      status: "fraîche",
+      lastSeen: "2026-07-01T22:00:00Z",
+      status: "en retard",
     },
     {
-      sourceId: "banque-releve",
-      label: "Relevé bancaire (CSV Belfius)",
+      sourceId: "fintro-coda",
+      label: "Relevés Fintro (CODA via CodaClean — mandat signé)",
       expectedEveryDays: 7,
-      lastSeen: iso(t - 10 * 86_400_000),
-      status: "en retard",
+      lastSeen: null,
+      status: "muette",
+    },
+    {
+      sourceId: "revolut-csv",
+      label: "Relevés Revolut Business (CSV)",
+      expectedEveryDays: 7,
+      lastSeen: null,
+      status: "muette",
     },
     {
       sourceId: "balance-comptable",
-      label: "Balance comptable (XLSX)",
-      expectedEveryDays: 7,
-      lastSeen: iso(t - 12 * 86_400_000),
+      label: "Balance comptable Brahim (Q1 2026 en cours)",
+      expectedEveryDays: 90,
+      lastSeen: null,
       status: "en retard",
+    },
+    {
+      sourceId: "takeaway-export",
+      label: "Exports Takeaway.com (relevés partenaire)",
+      expectedEveryDays: 7,
+      lastSeen: null,
+      status: "muette",
     },
   ];
 }
@@ -608,36 +546,36 @@ export function getSources(): SourceHealth[] {
 export function getIntegrations(): IntegrationSlot[] {
   return [
     {
-      id: "uber-eats",
-      label: "Uber Eats API",
+      id: "takeaway",
+      label: "Takeaway.com Partner",
       kind: "ventes",
       enabled: false,
-      envKey: "UBER_EATS_API_KEY",
-      note: "Commandes temps réel + relevés — remplace l'import CSV manuel.",
+      envKey: "TAKEAWAY_PARTNER_TOKEN",
+      note: "Commandes + relevés — confirme le taux de commission réel (≈23,3 % estimé). Contact : Ruben Pécriaux.",
     },
     {
-      id: "deliveroo",
-      label: "Deliveroo API",
-      kind: "ventes",
-      enabled: false,
-      envKey: "DELIVEROO_API_KEY",
-      note: "Commandes + promotions — remplace l'import CSV manuel.",
-    },
-    {
-      id: "bank",
-      label: "Banque (PSD2 / Belfius)",
+      id: "fintro-coda",
+      label: "Fintro (CODA via CodaClean)",
       kind: "banque",
       enabled: false,
-      envKey: "BANK_API_KEY",
-      note: "Relevés automatiques — alimente trésorerie et rapprochement.",
+      envKey: "CODACLEAN_FEED_KEY",
+      note: "Mandat signé sur BE69 1431 3360 5578 — activation à confirmer avec Tom Van Herle.",
     },
     {
-      id: "accounting",
-      label: "Comptabilité",
+      id: "revolut",
+      label: "Revolut Business",
+      kind: "banque",
+      enabled: false,
+      envKey: "REVOLUT_API_KEY",
+      note: "Solde connu ≈9 169 € (dernière lecture manuelle) — export CSV à confirmer.",
+    },
+    {
+      id: "clearfacts",
+      label: "ClearFacts (comptabilité Brahim)",
       kind: "comptabilité",
       enabled: false,
-      envKey: "ACCOUNTING_API_KEY",
-      note: "Balance comptable — nourrit marge et food cost.",
+      envKey: "CLEARFACTS_TOKEN",
+      note: "Accès en cours de configuration — nourrira marge et food cost. Q1 2026 en clôture.",
     },
     {
       id: "gmail",
@@ -645,15 +583,23 @@ export function getIntegrations(): IntegrationSlot[] {
       kind: "email",
       enabled: false,
       envKey: "GMAIL_OAUTH_CLIENT",
-      note: "Triage factures/relevés → inbox OS sans dépôt manuel.",
+      note: "Triage factures Foodex/Seamar/Fleetcor et relevés → inbox OS.",
     },
     {
-      id: "meta",
-      label: "Meta (Instagram + Facebook)",
-      kind: "social",
+      id: "uber-eats",
+      label: "Uber Eats",
+      kind: "ventes",
       enabled: false,
-      envKey: "META_GRAPH_TOKEN",
-      note: "Analytics + publication planifiée (approbation humaine, N4).",
+      envKey: "UBER_EATS_API_KEY",
+      note: "Onboarding bloqué 3+ mois côté plateforme — relance en cours, pas une question de clé.",
+    },
+    {
+      id: "airtable-stp",
+      label: "Airtable — Shop Ta Paire",
+      kind: "ventes",
+      enabled: false,
+      envKey: "AIRTABLE_PAT",
+      note: "Base appRvWC0OPKv4LmH6 (STOCK, PRÉCOMMANDES, ARRIVAGES, COMMANDES) — patrimoine séparé.",
     },
   ];
 }

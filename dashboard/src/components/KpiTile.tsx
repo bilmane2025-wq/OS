@@ -33,8 +33,14 @@ export function KpiTile({ kpi, accent = "var(--series-1)" }: { kpi: Kpi; accent?
         <div>
           <div className="text-2xl font-semibold leading-tight text-ink">{display(kpi)}</div>
           <div className="mt-1 flex items-center gap-2">
-            <Delta value={kpi.delta} goodWhenDown={GOOD_WHEN_DOWN.has(kpi.key)} />
-            <span className="text-[10px] text-ink-3">vs 7 j précédents</span>
+            {kpi.delta !== null ? (
+              <>
+                <Delta value={kpi.delta} goodWhenDown={GOOD_WHEN_DOWN.has(kpi.key)} />
+                <span className="text-[10px] text-ink-3">vs 7 j précédents</span>
+              </>
+            ) : (
+              <span className="text-[10px] text-ink-3">variation : inconnue</span>
+            )}
           </div>
         </div>
         <Sparkline data={kpi.history} color={accent} />
