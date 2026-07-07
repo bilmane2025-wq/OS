@@ -50,7 +50,8 @@ export interface AttentionBudget {
   cap: number;
 }
 
-export type ChannelName = "Site web" | "Takeaway.com" | "Comptoir";
+/** Les trois colonnes réelles du journal de caisse quotidien. */
+export type ChannelName = "Takeaway.com" | "Carte (TPE)" | "Espèces";
 
 export interface ChannelDay {
   date: string; // ISO jour

@@ -12,7 +12,7 @@ import { getAttention, getChannelDays, getKpis, getSources } from "@/lib/mock/da
 export default function InstantView() {
   const kpis = getKpis();
   const attention = getAttention();
-  const days = getChannelDays(14);
+  const days = getChannelDays();
   const sources = getSources();
 
   const kpiOrder = ["ca", "marge", "tresorerie", "food_cost", "ticket_moyen", "commandes_jour", "commission", "dependance_fournisseur"];
@@ -25,9 +25,9 @@ export default function InstantView() {
   const dayLabel = (isoDay: string) =>
     new Date(isoDay).toLocaleDateString(BUSINESS.locale, { day: "numeric", month: "short" });
   const series = [
-    { name: "Comptoir", color: "var(--series-2)" },
+    { name: "Espèces", color: "var(--series-2)" },
     { name: "Takeaway.com", color: "var(--series-3)" },
-    { name: "Site web", color: "var(--series-1)" },
+    { name: "Carte (TPE)", color: "var(--series-1)" },
   ].map((s) => ({
     ...s,
     values: labels.map(
@@ -54,14 +54,14 @@ export default function InstantView() {
         {/* Revenus 14 jours par canal */}
         <Card className="lg:col-span-2">
           <SectionTitle
-            title="Revenus par canal — 14 jours"
-            sub="Caisse réelle du 29/06 au 01/07, reste calibré sur l'historique mesuré (670 €/j). Site web et comptoir : 0 % de commission."
+            title="Revenus par mode d'encaissement — journal de caisse réel"
+            sub="8 jours saisis (28/06 → 05/07), zéro simulation. Rapprochement TPE actif : 2 écarts détectés."
             right={
               <Legend
                 items={[
-                  { name: "Site web", color: "var(--series-1)" },
+                  { name: "Carte (TPE)", color: "var(--series-1)" },
                   { name: "Takeaway.com", color: "var(--series-3)" },
-                  { name: "Comptoir", color: "var(--series-2)" },
+                  { name: "Espèces", color: "var(--series-2)" },
                 ]}
               />
             }

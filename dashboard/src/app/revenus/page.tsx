@@ -8,7 +8,7 @@ import type { ChannelName } from "@/lib/types";
 
 /** Revenus & ventes — CA, commandes, commissions, food cost par canal. */
 export default function RevenusPage() {
-  const days = getChannelDays(14);
+  const days = getChannelDays();
   const kpis = getKpis();
   const kpi = (k: string) => kpis.find((x) => x.key === k);
 
@@ -17,8 +17,8 @@ export default function RevenusPage() {
     new Date(isoDay).toLocaleDateString(BUSINESS.locale, { day: "numeric", month: "short" });
 
   const channels: Array<{ name: ChannelName; color: string }> = [
-    { name: "Site web", color: "var(--series-1)" },
-    { name: "Comptoir", color: "var(--series-2)" },
+    { name: "Carte (TPE)", color: "var(--series-1)" },
+    { name: "Espèces", color: "var(--series-2)" },
     { name: "Takeaway.com", color: "var(--series-3)" },
   ];
 
@@ -51,8 +51,8 @@ export default function RevenusPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <SectionTitle
-            title="Revenus quotidiens par canal"
-            sub="Un canal = une couleur, fixée à l'entité — le filtre ne repeint jamais les survivants."
+            title="Revenus quotidiens par mode d'encaissement — réels"
+            sub="Journal de caisse 28/06 → 05/07. Un mode = une couleur, fixée à l'entité."
             right={<Legend items={channels} />}
           />
           <LineChart
@@ -79,8 +79,9 @@ export default function RevenusPage() {
                 baselineLabel="seuil"
               />
               <p className="mt-2 text-xs text-ink-3">
-                Revolut seul (dernière lecture manuelle) — le solde Fintro est inconnu tant que
-                le flux CODA n&apos;est pas confirmé actif. Seuil de 2 000 € provisoire, à définir.
+                Mesuré : Revolut 668,34 € (06/07) + solde TPE 281,16 €. Les deux comptes Fintro
+                restent inconnus (CODA inactif) alors que ~15 000 € de crédits y sont entrés fin
+                juin — position réelle à confirmer, pas à supposer.
               </p>
             </>
           )}
@@ -90,8 +91,8 @@ export default function RevenusPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <SectionTitle
-            title="Répartition par canal — 7 jours"
-            sub="Le net déduit la commission Takeaway.com (≈23,3 % estimé) ; site web et comptoir rapportent 100 % du ticket."
+            title="Répartition par mode — 7 jours réels"
+            sub="Le net déduit la commission Takeaway.com (≈23,3 % estimé). Frais TPE mesurés à part : 1,01 %."
           />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

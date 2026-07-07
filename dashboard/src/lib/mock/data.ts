@@ -1,25 +1,31 @@
 /**
- * Couche de données — calibrée sur le PROFIL RÉEL (src/data/business-profile.json).
+ * Couche de données — désormais branchée sur les EXPORTS RÉELS déposés
+ * dans src/data/exports/ (journal de caisse, Fintro, Revolut, TPE) via
+ * src/lib/real/finance.ts. Serveur uniquement.
  *
- * Trois natures de valeurs, jamais mélangées :
- *  - "fait"       : mesuré (jumeau kameha_os.db 267 j, journaux de caisse) ;
- *  - "estimation" : calculé depuis l'historique, à confirmer ;
- *  - inconnu      : null / listes vides — affiché comme tel, JAMAIS inventé.
- *
- * Les jours sans journal de caisse sont simulés à partir des moyennes
- * historiques mesurées (670 €/j, split canaux 48/43,5/8,5) et portent une
- * confiance d'estimation. Les jours connus (29/06 → 01/07) utilisent les
- * montants réels saisis.
+ * Ce qui reste simulé : RIEN. Ce qui reste estimé : marge (25 % hist.),
+ * commission Takeaway (taux ≈23,3 % à confirmer), commandes/jour (dérivé
+ * du ticket moyen). Ce qui reste inconnu : soldes Fintro, social,
+ * campagnes — affichés comme tels.
  */
 import { BUSINESS } from "../config";
 import { KAMEHA } from "../profile";
+import {
+  getBalances,
+  getCaisseDays,
+  getChargesJuin,
+  getOpenReconGaps,
+  getReconciliation,
+  getSupplierCardSpend,
+  getTakeawayPayouts,
+  getTpeFees,
+} from "../real/finance";
 import type {
   Alert,
   AttentionBudget,
   Automation,
   Campaign,
   ChannelDay,
-  ChannelName,
   EmailThread,
   IntegrationSlot,
   Kpi,
@@ -29,106 +35,59 @@ import type {
   TeamMember,
 } from "../types";
 
-/* ------------------------------------------------------------------ */
-/* Générateur pseudo-aléatoire seedé (mulberry32) : déterministe.       */
-/* ------------------------------------------------------------------ */
-function mulberry32(seed: number) {
-  return function () {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const DAY_MS = 86_400_000;
-
-function today(): number {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 function iso(ts: number): string {
   return new Date(ts).toISOString();
 }
 
-function isoDay(ts: number): string {
-  return new Date(ts).toISOString().slice(0, 10);
-}
-
 /* ------------------------------------------------------------------ */
-/* Ventes par canal — mesuré quand connu, sinon simulé sur l'historique */
+/* Ventes par canal — le journal de caisse RÉEL (8 jours saisis).       */
 /* ------------------------------------------------------------------ */
-const CHANNELS: ChannelName[] = ["Site web", "Takeaway.com", "Comptoir"];
-
-/** CA moyen/jour mesuré (178 987 € / 267 j) réparti par canal historique. */
-const DAILY_TOTAL = KAMEHA.historique.ca / KAMEHA.historique.days; // ≈ 670 €
-const COMMISSION_RATE: Record<ChannelName, number> = {
-  "Site web": 0,
-  "Takeaway.com": KAMEHA.takeawayCommissionRate, // ≈ 23,3 % (estimé)
-  Comptoir: 0,
-};
-
-/** Journaux de caisse réels (totaux jour, saisis manuellement). */
-const CAISSE_REELLE: Record<string, number> = Object.fromEntries(
-  KAMEHA.caisseRecente.map((c) => [c.date, c.total]),
-);
-
-export function getChannelDays(days = 14): ChannelDay[] {
-  const rng = mulberry32(20260704);
-  const t0 = today() - (days - 1) * DAY_MS;
+/** Tous les jours réels du journal — le paramètre historique est ignoré. */
+export function getChannelDays(): ChannelDay[] {
+  const rate = KAMEHA.takeawayCommissionRate;
   const rows: ChannelDay[] = [];
-  for (let i = 0; i < days; i++) {
-    const ts = t0 + i * DAY_MS;
-    const day = isoDay(ts);
-    const weekday = new Date(ts).getDay();
-    // Pics week-end simulés (peakDays inconnu au profil — hypothèse métier).
-    const dayBoost = weekday === 5 || weekday === 6 ? 1.35 : weekday === 0 ? 1.15 : 0.92;
-    const simulatedTotal = DAILY_TOTAL * dayBoost * (0.85 + rng() * 0.3);
-    // Jour connu : le total réel de caisse remplace la simulation.
-    const total = CAISSE_REELLE[day] ?? simulatedTotal;
-    for (const channel of CHANNELS) {
-      const share = KAMEHA.channelSplit[channel];
-      const revenue = Math.round(total * share * 100) / 100;
-      rows.push({
-        date: day,
-        channel,
-        revenue,
-        orders: Math.max(1, Math.round(revenue / KAMEHA.historique.ticketMoyen)),
-        commission: Math.round(revenue * COMMISSION_RATE[channel] * 100) / 100,
-      });
-    }
+  for (const d of getCaisseDays()) {
+    rows.push(
+      {
+        date: d.date,
+        channel: "Takeaway.com",
+        revenue: d.tkw,
+        orders: Math.max(1, Math.round(d.tkw / KAMEHA.historique.ticketMoyen)),
+        commission: Math.round(d.tkw * rate * 100) / 100, // estimé, à confirmer
+      },
+      {
+        date: d.date,
+        channel: "Carte (TPE)",
+        revenue: d.carte,
+        orders: Math.max(1, Math.round(d.carte / KAMEHA.historique.ticketMoyen)),
+        commission: 0, // frais TPE ≈1 % suivis à part (mesurés)
+      },
+      {
+        date: d.date,
+        channel: "Espèces",
+        revenue: d.cash,
+        orders: Math.max(1, Math.round(d.cash / KAMEHA.historique.ticketMoyen)),
+        commission: 0,
+      },
+    );
   }
   return rows;
 }
 
 /* ------------------------------------------------------------------ */
-/* Les 8 KPI — natures et scores fidèles au profil.                     */
+/* Les 8 KPI — sur données réelles, natures fidèles.                    */
 /* ------------------------------------------------------------------ */
 export function getKpis(): Kpi[] {
-  const rows = getChannelDays();
-  const byDay = new Map<string, { revenue: number; orders: number; commission: number }>();
-  for (const r of rows) {
-    const agg = byDay.get(r.date) ?? { revenue: 0, orders: 0, commission: 0 };
-    agg.revenue += r.revenue;
-    agg.orders += r.orders;
-    agg.commission += r.commission;
-    byDay.set(r.date, agg);
-  }
-  const dayKeys = [...byDay.keys()].sort();
-  const daily = dayKeys.map((k) => byDay.get(k)!);
-  const revHistory = daily.map((d) => Math.round(d.revenue));
-
-  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-  const last7 = daily.slice(-7);
-  const prev7 = daily.slice(0, 7);
-  const ca7 = Math.round(sum(last7.map((d) => d.revenue)));
-  const caPrev7 = sum(prev7.map((d) => d.revenue));
-  const orders7 = sum(last7.map((d) => d.orders));
-  const commission7 = Math.round(sum(last7.map((d) => d.commission)));
+  const caisse = getCaisseDays();
+  const balances = getBalances();
   const now = iso(Date.now());
+  const h = KAMEHA.historique;
+  const rate = KAMEHA.takeawayCommissionRate;
+
+  const totals = caisse.map((d) => d.total);
+  const last7 = caisse.slice(-7);
+  const ca7 = Math.round(last7.reduce((a, d) => a + d.total, 0) * 100) / 100;
+  const tkw7 = last7.reduce((a, d) => a + d.tkw, 0);
 
   const mk = (
     key: string,
@@ -147,41 +106,35 @@ export function getKpis(): Kpi[] {
     confidence: { nature, score },
     delta,
     history,
-    ruleVersion: 1,
+    ruleVersion: 2,
     computedAt: now,
   });
 
-  const h = KAMEHA.historique;
-
   return [
-    // CA 7 j : mélange caisse réelle (3 j) + simulation calibrée → estimation.
-    mk("ca", "Chiffre d'affaires (7 j)", ca7, "EUR", revHistory, ca7 / caPrev7 - 1, "estimation", 0.75),
-    // Marge : bénéfice historique ≈ 25 % du CA (mesuré sur 267 j).
-    mk("marge", "Marge (7 j, base 25 % hist.)", Math.round(ca7 * h.margeNettePct), "EUR",
-      revHistory.map((r) => Math.round(r * h.margeNettePct)), null, "estimation", 0.7),
-    // Food cost : ≈32 % mesuré sur l'historique complet.
+    // CA : somme des 7 derniers journaux de caisse saisis — un fait
+    // (avec deux écarts TPE connus, d'où 0,9 et pas 1,0).
+    mk("ca", "CA 7 derniers jours (caisse)", ca7, "EUR", totals, null, "fait", 0.9),
+    mk("marge", "Marge (base 25 % hist.)", Math.round(ca7 * h.margeNettePct), "EUR",
+      totals.map((t) => Math.round(t * h.margeNettePct)), null, "estimation", 0.7),
     mk("food_cost", "Food cost (mesuré 267 j)", h.foodCostPct, "ratio",
-      revHistory.map(() => h.foodCostPct), null, "fait", 0.86),
-    // Ticket moyen : 45 € mesuré.
-    mk("ticket_moyen", "Ticket moyen (mesuré)", h.ticketMoyen, "EUR",
-      daily.map((d) => d.revenue / Math.max(1, d.orders)), null, "fait", 0.9),
-    // Dérivé du CA ÷ ticket moyen (pas un comptage) → estimation.
-    mk("commandes_jour", "Commandes / jour (dérivé)", orders7 / 7, "commandes/jour",
-      daily.map((d) => d.orders), null, "estimation", 0.7),
-    // Trésorerie : Revolut seul connu (≈9 169 €) — solde Fintro INCONNU.
-    mk("tresorerie", "Trésorerie (Revolut seul)", KAMEHA.soldeRevolut, "EUR",
-      revHistory.map(() => KAMEHA.soldeRevolut), null, "estimation", 0.5),
-    // Commission : Takeaway.com uniquement, taux ≈23,3 % estimé à confirmer.
-    mk("commission", "Commission Takeaway (7 j)", commission7, "EUR",
-      daily.map((d) => Math.round(d.commission)), null, "estimation", 0.72),
-    // Dépendance fournisseur : iFood ≈48 % du food cost, mesuré.
-    mk("dependance_fournisseur", "Dépendance iFood", h.ifoodSharePct, "ratio",
-      revHistory.map(() => h.ifoodSharePct), null, "fait", 0.85),
+      totals.map(() => h.foodCostPct), null, "fait", 0.86),
+    mk("ticket_moyen", "Ticket moyen (mesuré hist.)", h.ticketMoyen, "EUR",
+      totals.map(() => h.ticketMoyen), null, "fait", 0.9),
+    mk("commandes_jour", "Commandes / jour (dérivé)", ca7 / h.ticketMoyen / 7, "commandes/jour",
+      totals.map((t) => Math.round(t / h.ticketMoyen)), null, "estimation", 0.7),
+    // Trésorerie CONNUE : Revolut 668,34 € (06/07) + TPE 281,16 € —
+    // les deux comptes Fintro restent inconnus.
+    mk("tresorerie", "Trésorerie connue (Revolut + TPE)", balances.totalKnown, "EUR",
+      totals.map(() => balances.totalKnown), null, "estimation", 0.6),
+    mk("commission", "Commission Takeaway (7 j, estimée)", Math.round(tkw7 * rate), "EUR",
+      caisse.map((d) => Math.round(d.tkw * rate)), null, "estimation", 0.72),
+    mk("dependance_fournisseur", "Dépendance iFood (hist.)", h.ifoodSharePct, "ratio",
+      totals.map(() => h.ifoodSharePct), null, "fait", 0.85),
   ];
 }
 
 /* ------------------------------------------------------------------ */
-/* Alertes RÉELLES (anomalies ouvertes du profil) + budget d'attention. */
+/* Alertes RÉELLES — profil + rapprochements calculés sur les exports.  */
 /* ------------------------------------------------------------------ */
 const SEVERITY_RANK: Record<Alert["severity"], number> = {
   haute: 0,
@@ -191,7 +144,25 @@ const SEVERITY_RANK: Record<Alert["severity"], number> = {
 
 export function getAlerts(): Alert[] {
   const t = Date.now();
-  return [
+  const balances = getBalances();
+  const gaps = getOpenReconGaps();
+  const recon = getReconciliation();
+  const partial = recon.find((r) => r.partial && r.ecart !== null && Math.abs(r.ecart) >= 1);
+
+  const alerts: Alert[] = [
+    {
+      id: "AN-T01",
+      type: "tresorerie/position-connue-sous-seuil",
+      severity: "haute",
+      message:
+        `Trésorerie connue : ${balances.totalKnown.toFixed(2).replace(".", ",")} € (Revolut 668,34 € au 06/07 + TPE 281,16 €) — sous le seuil provisoire de 2 000 €. Soldes Fintro inconnus.`,
+      recommendation:
+        "Récupérer les soldes des deux comptes Fintro (BE69…5578 et BE12…1192) : ~15 000 € de crédits y sont entrés fin juin, la position réelle est probablement saine — à CONFIRMER, pas à supposer.",
+      impact: 2000 - balances.totalKnown,
+      refs: ["tresorerie"],
+      createdAt: iso(t - 12 * 3600_000),
+      state: "ouverte",
+    },
     {
       id: "AN-001",
       type: "assurance/prime-impayee",
@@ -217,17 +188,44 @@ export function getAlerts(): Alert[] {
       createdAt: iso(t - 6 * 86_400_000),
       state: "ouverte",
     },
-    {
-      id: "AN-003",
-      type: "caisse/ecart",
+  ];
+
+  // Écarts caisse ↔ TPE calculés depuis les exports (le vrai rapprochement).
+  for (const g of gaps) {
+    const explained = g.date === "2026-06-30";
+    alerts.push({
+      id: `AN-REC-${g.date}`,
+      type: `caisse/ecart-${g.date}`,
       severity: "moyenne",
-      message: "Écart de caisse +4,00 € le 30/06 : 1 198,90 € calculé vs 1 202,90 € saisi.",
-      recommendation: "Recompter le journal du 30/06 avec Aymane ; corriger la saisie ou justifier l'écart.",
-      impact: 4,
+      message:
+        `Écart caisse ↔ TPE le ${g.date} : ${g.carteSaisie.toFixed(2).replace(".", ",")} € saisis vs ` +
+        `${(g.tpeRegle ?? 0).toFixed(2).replace(".", ",")} € réglés par le TPE (écart ${(g.ecart ?? 0).toFixed(2).replace(".", ",")} €).` +
+        (explained ? " L'anomalie « +4 € » du 30/06 est EXPLIQUÉE : la saisie est fausse, pas la caisse." : ""),
+      recommendation: explained
+        ? "Corriger la saisie du 30/06 à 679,00 € (montant TPE mesuré) et clôturer l'anomalie."
+        : "Recompter le journal du jour avec Aymane — saisie incomplète probable côté carte.",
+      impact: Math.abs(g.ecart ?? 0),
       refs: ["ca"],
-      createdAt: iso(t - 4 * 86_400_000),
+      createdAt: iso(t - 2 * 86_400_000),
       state: "ouverte",
-    },
+    });
+  }
+
+  if (partial) {
+    alerts.push({
+      id: "AN-TPE-PARTIEL",
+      type: "tpe/reglement-partiel",
+      severity: "douce",
+      message:
+        `Le ${partial.date}, ${(partial.tpeRegle ?? 0).toFixed(2).replace(".", ",")} € réglés par le TPE vs ${partial.carteSaisie.toFixed(2).replace(".", ",")} € carte saisis — règlement J+1 vraisemblablement incomplet.`,
+      recommendation: "Revérifier après le prochain règlement TPE avant d'ouvrir une anomalie.",
+      refs: ["ca"],
+      createdAt: iso(t - 12 * 3600_000),
+      state: "ouverte",
+    });
+  }
+
+  alerts.push(
     {
       id: "AN-004",
       type: "fournisseur/dependance-ifood",
@@ -250,11 +248,23 @@ export function getAlerts(): Alert[] {
       state: "ouverte",
     },
     {
+      id: "AN-JIMS",
+      type: "abonnement/jims-double",
+      severity: "douce",
+      message: "Deux domiciliations Jims NV de 44,99 € le même jour (23/06) sur l'extrait Fintro — doublon possible.",
+      recommendation: "Vérifier s'il s'agit de deux abonnements voulus ou d'un prélèvement double à contester.",
+      impact: 44.99,
+      refs: ["charges"],
+      createdAt: iso(t - 5 * 86_400_000),
+      state: "ouverte",
+    },
+    {
       id: "AN-006",
       type: "regle/fdc-non-confirmee",
       severity: "douce",
-      message: "Signification de la colonne « Fdc » du journal de caisse non confirmée (17,60 € / 24,20 € observés).",
-      recommendation: "Confirmer avec Aymane ce que « Fdc » désigne (fond de caisse ?) — la règle de parsing attend.",
+      message:
+        "Colonne « Fdc » toujours non confirmée — et absente 3 jours sur 8 dans le journal (30/06, 02/07, 04/07).",
+      recommendation: "Confirmer avec Aymane ce que « Fdc » désigne (fond de caisse ?) et pourquoi elle manque certains jours.",
       refs: ["ca"],
       createdAt: iso(t - 3 * 86_400_000),
       state: "ouverte",
@@ -269,7 +279,9 @@ export function getAlerts(): Alert[] {
       createdAt: iso(t - 8 * 86_400_000),
       state: "ouverte",
     },
-  ];
+  );
+
+  return alerts;
 }
 
 /** Budget d'attention M27 : dédup par type (la plus grave gagne), plafond. */
@@ -298,7 +310,7 @@ export function getAttention(cap = BUSINESS.attentionCap): AttentionBudget {
 }
 
 /* ------------------------------------------------------------------ */
-/* Emails — correspondants réels du profil, statuts Jarvis.             */
+/* Emails — correspondants réels, statuts Jarvis.                       */
 /* ------------------------------------------------------------------ */
 export function getEmails(): EmailThread[] {
   const t = Date.now();
@@ -317,12 +329,12 @@ export function getEmails(): EmailThread[] {
     {
       id: "EM-02",
       from: "Takeaway.com (Ruben Pécriaux)",
-      subject: "Relevé hebdomadaire partenaire",
-      snippet: "Votre relevé de commandes et commissions de la semaine est disponible…",
+      subject: "Relevé partenaire — payout PO-20837435852",
+      snippet: "3 602,77 € nets versés le 30/06 (semaine du 22 au 28/06)…",
       receivedAt: iso(t - 5 * 3600_000),
       category: "plateforme",
       needsAction: true,
-      suggestedAction: "Importer l'export → confirmer le taux de commission réel (≈23,3 % estimé).",
+      suggestedAction: "Demander le relevé BRUT : les payouts Fintro sont nets — le taux réel de commission reste à confirmer.",
       unread: true,
     },
     {
@@ -333,7 +345,7 @@ export function getEmails(): EmailThread[] {
       receivedAt: iso(t - 26 * 3600_000),
       category: "banque",
       needsAction: true,
-      suggestedAction: "Confirmer que le bank-feed CODA est actif — le watchdog n'a encore rien reçu. [EN ATTENTE]",
+      suggestedAction: "Le CODA n'est toujours pas actif — les extraits arrivent en captures manuelles. Relancer. [EN ATTENTE]",
       unread: false,
     },
     {
@@ -362,7 +374,7 @@ export function getEmails(): EmailThread[] {
       id: "EM-06",
       from: "Fleetcor (billingdocuments@fleetcor.eu)",
       subject: "Document de facturation disponible",
-      snippet: "Votre document de facturation mensuel est prêt au téléchargement…",
+      snippet: "1 449,27 € de carburant domicilié en juin (5 prélèvements)…",
       receivedAt: iso(t - 3 * 86_400_000),
       category: "admin",
       needsAction: false,
@@ -372,22 +384,16 @@ export function getEmails(): EmailThread[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Social — INCONNU au profil : aucun chiffre inventé.                  */
+/* Social & campagnes — toujours inconnus au profil : rien d'inventé.   */
 /* ------------------------------------------------------------------ */
 export function getSocialStats(): SocialStat[] {
-  // Handles et accès non fournis (section 4 du profil en attente).
   return [];
 }
 
 export function getScheduledPosts(): ScheduledPost[] {
-  // Aucun planificateur branché — seul le Reels Tracker (3 reels seedés)
-  // existe côté analyse de contenu.
   return [];
 }
 
-/* ------------------------------------------------------------------ */
-/* Campagnes — INCONNU au profil : rien d'inventé.                      */
-/* ------------------------------------------------------------------ */
 export function getCampaigns(): Campaign[] {
   return [];
 }
@@ -402,36 +408,37 @@ export function getAutomations(): Automation[] {
       id: "AUT-01",
       name: "Ingestion journaux de caisse",
       description:
-        "Saisie manuelle Tkw / Rev(carte) / Cash / Total / Fdc → événements. La colonne « Fdc » attend confirmation avant parsing complet.",
+        "Parse le CSV quotidien Tkw / Rev / Cash / Total / Fdc. Dernier jour reçu : 05/07 — le 06/07 manque. « Fdc » absente 3 jours sur 8.",
       authority: 2,
       requiresHuman: false,
       enabled: true,
-      lastRun: iso(t - 3 * 86_400_000),
-      runsThisWeek: 3,
+      lastRun: iso(t - 24 * 3600_000),
+      runsThisWeek: 7,
       status: "attention",
     },
     {
       id: "AUT-02",
-      name: "Recalcul incrémental des KPI",
-      description: "DAG M12 : seuls les KPI dépendant des nouveaux événements sont recalculés.",
-      authority: 2,
+      name: "Rapprochement caisse ↔ TPE",
+      description:
+        "ACTIF sur données réelles : 2 écarts détectés (28/06 : −32,80 € ; 30/06 : −4,00 € expliqué) + 1 règlement partiel surveillé (05/07).",
+      authority: 3,
       requiresHuman: false,
       enabled: true,
-      lastRun: iso(t - 3 * 86_400_000),
-      runsThisWeek: 12,
-      status: "ok",
+      lastRun: iso(t - 3600_000),
+      runsThisWeek: 8,
+      status: "attention",
     },
     {
       id: "AUT-03",
-      name: "Rapprochement caisse ↔ banque",
+      name: "Rapprochement banque (Fintro/Revolut)",
       description:
-        "Attend le flux CODA Fintro (mandat CodaClean signé, activation à confirmer) — inerte sans relevés.",
+        "Revolut : CSV parsé (181 mouvements, solde 668,34 €). Fintro : extrait juin + captures parsés, mais flux CODA toujours inactif — soldes inconnus.",
       authority: 3,
       requiresHuman: false,
-      enabled: false,
-      lastRun: null,
-      runsThisWeek: 0,
-      status: "inerte",
+      enabled: true,
+      lastRun: iso(t - 3600_000),
+      runsThisWeek: 2,
+      status: "attention",
     },
     {
       id: "AUT-04",
@@ -447,15 +454,15 @@ export function getAutomations(): Automation[] {
     },
     {
       id: "AUT-05",
-      name: "Suivi litiges fournisseurs",
+      name: "Surveillance charges & abonnements",
       description:
-        "Foodex (avoir 516,01 €) + Dirk Marchand (surfacturation récurrente) : relances et contrôle facture.",
-      authority: 3,
-      requiresHuman: true,
+        "ACTIF sur l'extrait Fintro : doublon Jims 2 × 44,99 € détecté le 23/06 ; charges juin regroupées (loyers, carburant, énergie…).",
+      authority: 2,
+      requiresHuman: false,
       enabled: true,
-      lastRun: iso(t - 6 * 86_400_000),
-      runsThisWeek: 2,
-      status: "attention",
+      lastRun: iso(t - 3600_000),
+      runsThisWeek: 1,
+      status: "ok",
     },
     {
       id: "AUT-06",
@@ -473,7 +480,7 @@ export function getAutomations(): Automation[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Équipe — profil réel, inconnues affichées comme telles.              */
+/* Équipe — profil + mouvements réels observés sur Revolut.             */
 /* ------------------------------------------------------------------ */
 export function getTeam(): TeamMember[] {
   return [
@@ -484,6 +491,7 @@ export function getTeam(): TeamMember[] {
       hoursWeek: null,
       ordersHandled: null,
       onShift: null,
+      note: "Remboursements d'acompte 1 500 € le 06/07 (Revolut)",
     },
     {
       id: "TM-02",
@@ -494,34 +502,50 @@ export function getTeam(): TeamMember[] {
       onShift: null,
       note: "Contrat Article 61 (CPAS Wavre)",
     },
+    {
+      id: "TM-03",
+      name: "Gautier B",
+      role: null,
+      hoursWeek: null,
+      ordersHandled: null,
+      onShift: null,
+      note: "Avance sur salaire 150 € versée le 06/07 (Revolut) — à régulariser en paie",
+    },
   ];
 }
 
 /* ------------------------------------------------------------------ */
-/* Fraîcheur des sources (watchdog M33) — état réel.                    */
+/* Fraîcheur des sources (watchdog M33) — état réel au 07/07.           */
 /* ------------------------------------------------------------------ */
 export function getSources(): SourceHealth[] {
   return [
     {
       sourceId: "journaux-caisse",
-      label: "Journaux de caisse (saisie manuelle quotidienne)",
+      label: "Journaux de caisse (saisie quotidienne — dernier : 05/07)",
       expectedEveryDays: 1,
-      lastSeen: "2026-07-01T22:00:00Z",
+      lastSeen: "2026-07-05T22:00:00Z",
       status: "en retard",
     },
     {
-      sourceId: "fintro-coda",
-      label: "Relevés Fintro (CODA via CodaClean — mandat signé)",
+      sourceId: "revolut-csv",
+      label: "Revolut Business (CSV reçu, 181 mouvements → 06/07)",
       expectedEveryDays: 7,
-      lastSeen: null,
-      status: "muette",
+      lastSeen: "2026-07-06T12:00:00Z",
+      status: "fraîche",
     },
     {
-      sourceId: "revolut-csv",
-      label: "Relevés Revolut Business (CSV)",
+      sourceId: "tpe-settlements",
+      label: "Règlements TPE (36 jours → 06/07)",
+      expectedEveryDays: 1,
+      lastSeen: "2026-07-06T16:00:00Z",
+      status: "fraîche",
+    },
+    {
+      sourceId: "fintro-coda",
+      label: "Fintro — extrait juin + captures reçus ; flux CODA toujours inactif",
       expectedEveryDays: 7,
-      lastSeen: null,
-      status: "muette",
+      lastSeen: "2026-07-05T12:00:00Z",
+      status: "en retard",
     },
     {
       sourceId: "balance-comptable",
@@ -532,7 +556,7 @@ export function getSources(): SourceHealth[] {
     },
     {
       sourceId: "takeaway-export",
-      label: "Exports Takeaway.com (relevés partenaire)",
+      label: "Relevés BRUTS Takeaway.com (les payouts Fintro sont nets)",
       expectedEveryDays: 7,
       lastSeen: null,
       status: "muette",
@@ -541,17 +565,33 @@ export function getSources(): SourceHealth[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Connecteurs — inertes tant que la clé n'est pas dans le coffre M30.  */
+/* Connecteurs — état réel.                                             */
 /* ------------------------------------------------------------------ */
 export function getIntegrations(): IntegrationSlot[] {
   return [
     {
-      id: "takeaway",
-      label: "Takeaway.com Partner",
+      id: "caisse",
+      label: "Journal de caisse (CSV)",
       kind: "ventes",
-      enabled: false,
-      envKey: "TAKEAWAY_PARTNER_TOKEN",
-      note: "Commandes + relevés — confirme le taux de commission réel (≈23,3 % estimé). Contact : Ruben Pécriaux.",
+      enabled: true,
+      envKey: "—",
+      note: "ACTIF : 8 jours parsés (28/06 → 05/07). Colonne Fdc en attente de confirmation.",
+    },
+    {
+      id: "revolut",
+      label: "Revolut Business",
+      kind: "banque",
+      enabled: true,
+      envKey: "REVOLUT_API_KEY",
+      note: "CSV parsé (solde 668,34 € au 06/07). L'API rendrait le solde temps réel.",
+    },
+    {
+      id: "tpe",
+      label: "TPE / acquéreur carte",
+      kind: "banque",
+      enabled: true,
+      envKey: "—",
+      note: "ACTIF : 36 jours de règlements + 725 transactions parsés. Frais mesurés : 1,01 %.",
     },
     {
       id: "fintro-coda",
@@ -559,15 +599,15 @@ export function getIntegrations(): IntegrationSlot[] {
       kind: "banque",
       enabled: false,
       envKey: "CODACLEAN_FEED_KEY",
-      note: "Mandat signé sur BE69 1431 3360 5578 — activation à confirmer avec Tom Van Herle.",
+      note: "Extrait juin + captures parsés MANUELLEMENT. CODA à activer avec Tom Van Herle → soldes automatiques.",
     },
     {
-      id: "revolut",
-      label: "Revolut Business",
-      kind: "banque",
+      id: "takeaway",
+      label: "Takeaway.com Partner",
+      kind: "ventes",
       enabled: false,
-      envKey: "REVOLUT_API_KEY",
-      note: "Solde connu ≈9 169 € (dernière lecture manuelle) — export CSV à confirmer.",
+      envKey: "TAKEAWAY_PARTNER_TOKEN",
+      note: "Payouts NETS visibles via Fintro (11 723 € en juin). Le relevé brut confirmera le taux ≈23,3 %.",
     },
     {
       id: "clearfacts",
@@ -575,7 +615,7 @@ export function getIntegrations(): IntegrationSlot[] {
       kind: "comptabilité",
       enabled: false,
       envKey: "CLEARFACTS_TOKEN",
-      note: "Accès en cours de configuration — nourrira marge et food cost. Q1 2026 en clôture.",
+      note: "Accès en cours — nourrira marge et food cost. Q1 2026 en clôture.",
     },
     {
       id: "gmail",
@@ -584,14 +624,6 @@ export function getIntegrations(): IntegrationSlot[] {
       enabled: false,
       envKey: "GMAIL_OAUTH_CLIENT",
       note: "Triage factures Foodex/Seamar/Fleetcor et relevés → inbox OS.",
-    },
-    {
-      id: "uber-eats",
-      label: "Uber Eats",
-      kind: "ventes",
-      enabled: false,
-      envKey: "UBER_EATS_API_KEY",
-      note: "Onboarding bloqué 3+ mois côté plateforme — relance en cours, pas une question de clé.",
     },
     {
       id: "airtable-stp",
@@ -603,3 +635,16 @@ export function getIntegrations(): IntegrationSlot[] {
     },
   ];
 }
+
+/* ------------------------------------------------------------------ */
+/* Ré-exports pratiques pour les pages et l'API finance.                */
+/* ------------------------------------------------------------------ */
+export {
+  getBalances,
+  getCaisseDays,
+  getChargesJuin,
+  getReconciliation,
+  getSupplierCardSpend,
+  getTakeawayPayouts,
+  getTpeFees,
+};

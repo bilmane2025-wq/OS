@@ -1,0 +1,35 @@
+Numero,Date,Type,Contrepartie,Description,Montant,Sens
+0159,2026-06-01,Domiciliation europeenne,FleetCor Belgium sprl,B2B - carburant,249.32,Debit
+0160,2026-06-02,Virement en euros,TAKEAWAY.COM BE,Paiement PO-20577261952 31-05-2026,2483.70,Credit
+0161,2026-06-02,Virement europeen instantane,aybi group (Revolut LT05...5614),Autre paiement,4000.00,Debit
+0162,2026-06-04,Virement Wero,Mahieu - Belataris,WERO AYBI GROUP SRL,36.30,Credit
+0163,2026-06-05,Virement europeen instantane,PAULET THOMAS,WERO AYBI GROUP SRL,35.30,Credit
+0164,2026-06-08,Paiement mobile,BE51 2300 4120 9862,Bancontact,47.30,Credit
+0165,2026-06-08,Domiciliation europeenne,FleetCor Belgium sprl,B2B - carburant,430.69,Debit
+0166,2026-06-09,Virement en euros,TAKEAWAY.COM BE,Paiement PO-20643564202 07-06-2026,1855.73,Credit
+0167,2026-06-09,Virement europeen instantane,Mobiliteit en Parkeren Antwerpen AG,600404173445,70.00,Debit
+0168,2026-06-10,Virement europeen instantane,kaddouri bilal,Autre paiement,1000.00,Debit
+0169,2026-06-11,Domiciliation europeenne,YUZZU SA,CONTR. AUTO 35434225 06/26,87.73,Debit
+0170,2026-06-11,Virement europeen instantane,client,REMBOURSEMENT,55.60,Debit
+0171,2026-06-13,Virement en euros,STEVIGNY CORALIE,REMBOURSEMENT,63.20,Debit
+0172,2026-06-16,Virement en euros,TAKEAWAY.COM BE,Paiement PO-20708117102 14-06-2026,1680.20,Credit
+0173,2026-06-16,Virement europeen instantane,AYBI GROUP (Revolut),TRANSFERT,500.00,Credit
+0174,2026-06-16,Virement europeen instantane,proprietaire Poke,LOYER JUIN,850.00,Debit
+0175,2026-06-16,Virement en euros,bubble,LOYER JUIN,525.00,Debit
+0176,2026-06-16,Paiement par carte de debit,ENGIE,Bancontact,422.74,Debit
+0177,2026-06-16,Domiciliation europeenne,FleetCor Belgium sprl,B2B - carburant,393.36,Debit
+0178,2026-06-17,Domiciliation europeenne,Renewi N.V.,FACTNR 8511825,151.60,Debit
+0179,2026-06-18,Virement europeen instantane,aybi group (Revolut),Autre paiement,795.26,Debit
+0180,2026-06-19,Paiement par carte de debit,mahsum aykut,P2P MOBIL 18-06-2026,11.00,Debit
+0181,2026-06-23,Virement en euros,TAKEAWAY.COM BE,Paiement PO-20771959092 21-06-2026,2100.71,Credit
+0182,2026-06-23,Domiciliation europeenne,FleetCor Belgium sprl,B2B - carburant,325.66,Debit
+0183,2026-06-23,Domiciliation europeenne,Jims NV,JIMS FITNESS GROUP 39.99,44.99,Debit
+0184,2026-06-23,Domiciliation europeenne,Jims NV,JIMS FITNESS GROUP 39.99,44.99,Debit
+0185,2026-06-25,Paiement par carte de debit,Ferme aux Legumes-Hout,Bancontact,7.43,Debit
+0186,2026-06-26,Virement en euros,AYBI GROUP SRL (interne BE12...1192),Transfert interne,1000.00,Debit
+0187,2026-06-26,Virement en euros,aybi group (Revolut),Sans communication,665.00,Debit
+0188,2026-06-26,Domiciliation europeenne,PROXIMUS,Facture telecom,116.54,Debit
+0189,2026-06-29,Domiciliation europeenne,TotalEnergies PG Belgium SA,Facture energie,105.26,Debit
+0190,2026-06-30,Virement en euros,TAKEAWAY.COM BE,Paiement PO-20837435852 28-06-2026,3602.77,Credit
+0191,2026-06-30,Virement europeen instantane,khadija boujtat,AMENDE TAXE ROULAGE ASSURANCE,325.00,Debit
+0192,2026-06-30,Domiciliation europeenne,FleetCor Belgium sprl,B2B - carburant,50.24,Debit

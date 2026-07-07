@@ -10,7 +10,7 @@
  */
 import { BUSINESS } from "./config";
 import { fmtConfidence, fmtEur, fmtNum, fmtPct } from "./format";
-import { KAMEHA, OWNER, SHOP_TA_PAIRE } from "./profile";
+import { OWNER, SHOP_TA_PAIRE } from "./profile";
 import type { AttentionBudget, JarvisReply, Kpi } from "./types";
 
 export interface JarvisContext {
@@ -33,8 +33,8 @@ function quip(seed: number): string | undefined {
 }
 
 const GREETINGS = [
-  `${OWNER.callMe}. 7 anomalies ouvertes, 2 hautes. On commence par laquelle ?`,
-  `Présent. ${BUSINESS.name} sous surveillance — caisse, litiges, banque. Question ?`,
+  `${OWNER.callMe}. Les exports sont parsés : caisse, Fintro, Revolut, TPE. 3 alertes hautes. On commence par laquelle ?`,
+  `Présent. ${BUSINESS.name} sous surveillance — caisse rapprochée du TPE, litiges, soldes. Question ?`,
   "Oui ? J'écoutais déjà.",
 ];
 
@@ -97,17 +97,35 @@ const INTENTS: Intent[] = [
     },
   },
   {
-    patterns: [/(caisse|journal de caisse|journaux)/i],
-    handle: () => {
-      const last = KAMEHA.caisseRecente[KAMEHA.caisseRecente.length - 1];
-      return {
-        text:
-          `Dernier journal saisi : ${last.date}, ${fmtEur(last.total, true)}. ` +
-          `Le 30/06 porte un écart OUVERT de +4,00 € (1 198,90 calculé vs 1 202,90 saisi). ` +
-          `Rien reçu depuis le 01/07 — la source quotidienne est en retard. [EN ATTENTE]`,
-        navigateTo: "/revenus",
-      };
-    },
+    patterns: [/(caisse|journal de caisse|journaux|écart|ecart)/i],
+    handle: () => ({
+      text:
+        "Dernier journal : 05/07, 1 201,03 €. Le rapprochement TPE a parlé : le 30/06, l'écart de +4 € est EXPLIQUÉ (le TPE a réglé 679,00 €, la saisie de 675,00 € est fausse) ; et le 28/06 cache un écart jamais vu de −32,80 € (390,80 € TPE vs 358,00 € saisis). Le 06/07 n'est pas encore saisi. [EN ATTENTE]",
+      navigateTo: "/revenus",
+    }),
+  },
+  {
+    patterns: [/(charge|frais fixe|loyer|abonnement|carburant)/i],
+    handle: () => ({
+      text:
+        "Charges de juin mesurées sur Fintro : carburant FleetCor 1 449,27 € (5 prélèvements — c'est le poste n°1, à challenger), loyers 1 375 €, énergie 528 €, Renewi 151,60 €, Proximus 116,54 €, Yuzzu 87,73 €, Jims 2 × 44,99 € le même jour — doublon possible, à vérifier.",
+      navigateTo: "/alertes",
+    }),
+  },
+  {
+    patterns: [/(tpe|terminal|frais carte|sumup)/i],
+    handle: () => ({
+      text:
+        "Frais TPE mesurés sur 36 jours : 207,32 € sur 20 461,12 € encaissés, soit 1,01 % effectif. Solde du compte marchand : 281,16 €. C'est propre — rien à renégocier en priorité.",
+    }),
+  },
+  {
+    patterns: [/(avance|salaire|acompte|accompte|gautier)/i],
+    handle: () => ({
+      text:
+        "Mouvements équipe repérés sur Revolut le 06/07 : avance sur salaire de 150 € à Gautier B (à régulariser en paie), et 1 500 € de remboursements d'acompte vers Aymane. Tout est tracé.",
+      navigateTo: "/equipe",
+    }),
   },
   {
     patterns: [/(litige|foodex|avoir|dirk marchand)/i],
@@ -131,13 +149,13 @@ const INTENTS: Intent[] = [
     patterns: [/(chiffre d.affaires|\bca\b|revenu)/i],
     handle: (ctx) =>
       kpiAnswer(ctx, "ca", (k) =>
-        `CA 7 derniers jours : ${fmtEur(k.value)} — 3 jours de caisse réelle, le reste calibré sur l'historique mesuré (670 €/j sur 267 j)`),
+        `CA 7 derniers jours : ${fmtEur(k.value, true)} — 100 % journal de caisse réel (29/06 → 05/07), soit ≈${fmtEur((k.value ?? 0) / 7)} par jour, au-dessus des 670 €/j de l'historique`),
   },
   {
-    patterns: [/(trésorerie|tresorerie|cash|banque|solde|revolut|fintro)/i],
+    patterns: [/(trésorerie|tresorerie|cash\b|banque|solde|revolut|fintro)/i],
     handle: (ctx) =>
       kpiAnswer(ctx, "tresorerie", (k) =>
-        `Trésorerie connue : ${fmtEur(k.value)} — Revolut seul. Le solde Fintro est INCONNU tant que le flux CODA n'est pas confirmé actif avec Tom Van Herle`),
+        `Trésorerie CONNUE : ${fmtEur(k.value, true)} — Revolut 668,34 € (06/07) + TPE 281,16 €. Sous le seuil provisoire de 2 000 €, MAIS les deux comptes Fintro sont inconnus alors que ~15 000 € y sont entrés fin juin. Priorité : récupérer ces deux soldes`),
   },
   {
     patterns: [/(food ?cost|coût matière|cout matiere)/i],
@@ -168,10 +186,10 @@ const INTENTS: Intent[] = [
         `Commission Takeaway.com sur 7 j : ${fmtEur(k.value)} — taux ≈23,3 % estimé sur l'historique, à confirmer sur le prochain relevé (contact : Ruben Pécriaux). Le site web, lui, prélève zéro`),
   },
   {
-    patterns: [/(fournisseur|ifood|dépendance|dependance|seamar)/i],
+    patterns: [/(fournisseur|ifood|dépendance|dependance|seamar|oscar|colruyt|ozfood)/i],
     handle: (ctx) =>
       kpiAnswer(ctx, "dependance_fournisseur", (k) =>
-        `${fmtPct(k.value)} du food cost chez iFood (mesuré). Un seul point de défaillance sur les produits asiatiques — un second fournisseur sur le top 5 des références s'impose`),
+        `${fmtPct(k.value)} du food cost chez iFood (historique). Côté carte Revolut sur 5 semaines : Oscar Drink 1 612 €, OzFood 1 183 €, Clavie 1 026 €, Cré Embal 821 €, Colruyt 752 €. Un second fournisseur asiatique reste la priorité`),
   },
   {
     patterns: [/(uber|deliveroo)/i],
